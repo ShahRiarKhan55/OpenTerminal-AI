@@ -1,46 +1,132 @@
+# OpenTerminal AI: API + monitoring worker + web dashboard (+ an on-demand backup job).
+#
+#   cp .env.example .env     # set API_KEY at minimum (openssl rand -hex 32)
+#   docker compose up -d --build
+#
+# PAPER TRADING ONLY: nothing here can place a real order. Everything is published on 127.0.0.1 only;
+# see docs/OPERATIONS.md before exposing it beyond this machine.
+
+name: openterminal
+
+x-hardened: &hardened
+  restart: unless-stopped
+  init: true # reaps zombies and forwards SIGTERM, so shutdown is graceful
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" } # logs rotate; they cannot fill the disk
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
-    # Bound to localhost by default: only this machine can reach the API.
-    # To expose it on your network/internet, bind wider here AND set API_KEY
-    # below explicitly (otherwise a fresh key is generated per container).
-    ports:
-      - "127.0.0.1:4000:4000"
+    <<: *hardened
+    build: { context: ., dockerfile: server/Dockerfile }
+    image: openterminal-server:local
+    # Loopback only. Put a TLS reverse proxy in front before exposing it (docs/OPERATIONS.md).
+    ports: ["127.0.0.1:4000:4000"]
+    # Least privilege: the API gets NO Telegram token and no monitoring settings.
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - API_KEY=${API_KEY:-}
-      - API_HOST=0.0.0.0 # safe: still only published to 127.0.0.1 above
       - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:3000}
-      - DATA_DIR=/app/data
-      # Data-freshness gates for alert eligibility (see .env.example). Empty = default.
+      - TRUST_PROXY=${TRUST_PROXY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - SEC_EDGAR_CONTACT=${SEC_EDGAR_CONTACT:-}
+      - YAHOO_USER_AGENT=${YAHOO_USER_AGENT:-}
       - MAX_QUOTE_AGE_SEC=${MAX_QUOTE_AGE_SEC:-}
       - MAX_DELAYED_AGE_SEC=${MAX_DELAYED_AGE_SEC:-}
       - ALERT_ALLOW_EXTENDED_HOURS=${ALERT_ALLOW_EXTENDED_HOURS:-}
-      # Leave unset unless you put your own trusted reverse proxy in front of
-      # the web service (see README > Security defaults) — otherwise a caller
-      # could forge X-Forwarded-For to dodge the /api/ai rate limit.
-      - TRUST_PROXY=${TRUST_PROXY:-}
-    volumes:
-      - terminal-data:/app/data
-    restart: unless-stopped
+      - PAPER_STARTING_CASH=${PAPER_STARTING_CASH:-}
+      - LOG_LEVEL=${LOG_LEVEL:-}
+    volumes: ["terminal-data:/data"]
+
+  worker:
+    <<: *hardened
+    image: openterminal-server:local
+    depends_on:
+      api: { condition: service_healthy } # api applies migrations first on a fresh volume
+    command: ["node", "dist/worker/index.js"]
+    healthcheck:
+      # Healthy iff a monitoring cycle completed recently (reads the heartbeat; never writes).
+      test: ["CMD", "node", "dist/worker/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 30s # a cycle in flight finishes; state is transactional either way
+    environment:
+      - TRADING_MODE=paper
+      - API_KEY=${API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - AI_MODEL=${AI_MODEL:-}
+      - AI_ENABLED=${AI_ENABLED:-}
+      - AI_DAILY_CALL_LIMIT=${AI_DAILY_CALL_LIMIT:-}
+      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-}
+      - AI_MIN_INTERVAL_SEC=${AI_MIN_INTERVAL_SEC:-}
+      - AI_TIMEOUT_MS=${AI_TIMEOUT_MS:-}
+      - AI_MIN_IMPORTANCE=${AI_MIN_IMPORTANCE:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-}
+      - TELEGRAM_MIN_IMPORTANCE=${TELEGRAM_MIN_IMPORTANCE:-}
+      - TELEGRAM_DAILY_CAP=${TELEGRAM_DAILY_CAP:-}
+      - TELEGRAM_API_BASE=${TELEGRAM_API_BASE:-}
+      - SEC_EDGAR_CONTACT=${SEC_EDGAR_CONTACT:-}
+      - YAHOO_USER_AGENT=${YAHOO_USER_AGENT:-}
+      - MAX_QUOTE_AGE_SEC=${MAX_QUOTE_AGE_SEC:-}
+      - MAX_DELAYED_AGE_SEC=${MAX_DELAYED_AGE_SEC:-}
+      - ALERT_ALLOW_EXTENDED_HOURS=${ALERT_ALLOW_EXTENDED_HOURS:-}
+      - MAX_CANDLE_LAG_SEC=${MAX_CANDLE_LAG_SEC:-}
+      - MONITOR_POLL_SECONDS=${MONITOR_POLL_SECONDS:-}
+      - MONITOR_IDLE_POLL_SECONDS=${MONITOR_IDLE_POLL_SECONDS:-}
+      - MONITOR_CANDLE_REFRESH_SECONDS=${MONITOR_CANDLE_REFRESH_SECONDS:-}
+      - MONITOR_DAILY_REFRESH_SECONDS=${MONITOR_DAILY_REFRESH_SECONDS:-}
+      - MONITOR_MAX_SYMBOLS=${MONITOR_MAX_SYMBOLS:-}
+      - MONITOR_NEWS_ENABLED=${MONITOR_NEWS_ENABLED:-}
+      - MONITOR_NEWS_REFRESH_SECONDS=${MONITOR_NEWS_REFRESH_SECONDS:-}
+      - ALERT_DAILY_CAP=${ALERT_DAILY_CAP:-}
+      - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-}
+      - PAPER_STARTING_CASH=${PAPER_STARTING_CASH:-}
+      - HEALTH_MAX_AGE_SEC=${HEALTH_MAX_AGE_SEC:-}
+      - LOG_LEVEL=${LOG_LEVEL:-}
+    volumes: ["terminal-data:/data"]
 
   web:
-    build:
-      context: .
-      dockerfile: web/Dockerfile
-    ports:
-      - "127.0.0.1:3000:3000"
+    <<: *hardened
+    build: { context: ., dockerfile: web/Dockerfile }
+    image: openterminal-web:local
+    depends_on:
+      api: { condition: service_healthy }
+    ports: ["127.0.0.1:3000:3000"]
+    tmpfs:
+      - /tmp
+      - /app/web/.next/cache
+    # The web tier holds only the API key; it never sees Telegram or Anthropic credentials.
     environment:
       - API_URL=http://api:4000
       - API_KEY=${API_KEY:-}
-      - API_KEY_FILE=/app/data/.api-key
-    volumes:
-      - terminal-data:/app/data:ro
-    depends_on:
-      - api
-    restart: unless-stopped
+      - API_KEY_FILE=/data/.api-key
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+    volumes: ["terminal-data:/data:ro"]
+
+  # On demand:  docker compose run --rm backup     (safe while everything is running)
+  backup:
+    <<: *hardened
+    restart: "no"
+    image: openterminal-server:local
+    profiles: ["tools"]
+    command: ["node", "dist/scripts/backup.js"]
+    healthcheck: { disable: true }
+    environment:
+      - BACKUP_KEEP=${BACKUP_KEEP:-14}
+    volumes: ["terminal-data:/data"]
 
 volumes:
   terminal-data:

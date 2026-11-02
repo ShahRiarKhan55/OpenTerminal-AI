@@ -8,7 +8,7 @@ import { DEFAULT_WATCHLIST_SYMBOLS, runMigrations } from "./migrations.js";
 // compiled, dist/db.js sits two levels below /app instead of server/src, so
 // the source-relative default below would otherwise resolve outside /app.
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const dataDir = process.env.DATA_DIR ?? join(root, "data");
+export const dataDir = process.env.DATA_DIR || join(root, "data");
 export const backupDir = join(dataDir, "backups");
 // The database, backups and generated API key are private to this user.
 mkdirSync(dataDir, { recursive: true, mode: 0o700 });

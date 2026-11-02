@@ -31,7 +31,7 @@ if (process.env.TRUST_PROXY === "1") {
 // this, any website open in the same browser as the terminal could reach a
 // server bound beyond localhost — cors() with no options reflects every
 // origin.
-const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+const webOrigin = process.env.WEB_ORIGIN || "http://localhost:3000";
 app.use(cors({ origin: webOrigin }));
 // API responses are JSON data, never cacheable, never sniffable, never framed.
 app.use((_req, res, next) => {

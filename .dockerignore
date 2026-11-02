@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/.next
+**/dist
+**/*.log
+data
+docs
+safety-backup
+.env
+.env.*
+!.env.example
+**/*.test.ts
+**/test-*.ts
+web/tsconfig.tsbuildinfo

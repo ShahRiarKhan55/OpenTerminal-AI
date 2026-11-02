@@ -8,7 +8,7 @@ import { allowedHosts, checkMutation, CSRF_HEADER, hostAllowed, MAX_BODY_BYTES, 
 //
 // Because this handler attaches the key to whatever reaches it, it is also the security boundary
 // against CSRF and DNS rebinding: see lib/proxy.ts for the rules enforced below.
-const API_URL = process.env.API_URL ?? "http://localhost:4000";
+const API_URL = process.env.API_URL || "http://localhost:4000";
 const UPSTREAM_TIMEOUT_MS = 30_000;
 const HOSTS = allowedHosts();
 

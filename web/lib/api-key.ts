@@ -17,7 +17,7 @@ export function getApiKey(): string | null {
   if (process.env.API_KEY) return process.env.API_KEY;
   if (cached) return cached;
 
-  const keyFile = process.env.API_KEY_FILE ?? join(process.cwd(), "..", "data", ".api-key");
+  const keyFile = process.env.API_KEY_FILE || join(process.cwd(), "..", "data", ".api-key");
   try {
     cached = readFileSync(keyFile, "utf8").trim();
   } catch {

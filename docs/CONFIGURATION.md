@@ -59,6 +59,8 @@ paper-trade eligibility**; the dashboard still displays whatever data is availab
 | `ALERT_DAILY_CAP` | `60` | 1–1000 | Alerts per ET day; high-importance alerts get double headroom. |
 | `DATA_RETENTION_DAYS` | `90` | 7–3650 | Audit log, alerts and events older than this are pruned daily. The paper ledger and reports are kept. |
 | `PAPER_STARTING_CASH` | `100000` | 1000–1e9 | Starting paper cash, applied when the database is first created. |
+| `HEALTH_MAX_AGE_SEC` | `900` | 60–86400 | Container health check for the worker: unhealthy if no monitoring cycle completed within this many seconds (the slow off-hours interval is 300 s, so keep it above that). |
+| `BACKUP_KEEP` | `14` | 1–3650 | `docker compose run --rm backup` keeps this many newest scheduled backups. |
 | `LOG_LEVEL` | `info` | debug/info/warn/error | Structured JSON logs on stdout/stderr. Secrets are redacted. |
 
 Risk limits (risk per trade, max positions, daily loss limit, kill switch, ...) are **not** environment

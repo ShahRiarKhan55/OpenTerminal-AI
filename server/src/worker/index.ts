@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     source: createLiveSource(),
     telegram: cfg.telegram.enabled ? { target: { token: cfg.telegram.token, chatId: cfg.telegram.chatId, apiBase: cfg.telegram.apiBase } } : null,
     ai: cfg.ai.enabled
-      ? new ClaudeProvider(cfg.ai.model, { maxTokens: cfg.ai.maxTokens, timeoutMs: cfg.ai.timeoutMs, baseURL: process.env.ANTHROPIC_BASE_URL, apiKey: process.env.ANTHROPIC_API_KEY })
+      ? new ClaudeProvider(cfg.ai.model, { maxTokens: cfg.ai.maxTokens, timeoutMs: cfg.ai.timeoutMs, baseURL: process.env.ANTHROPIC_BASE_URL?.trim() || undefined, apiKey: process.env.ANTHROPIC_API_KEY?.trim() || undefined })
       : null,
     now: Date.now,
     log,

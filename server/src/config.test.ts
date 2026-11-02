@@ -72,3 +72,56 @@ describe("loadWorkerConfig", () => {
     expect(() => loadWorkerConfig({ TELEGRAM_API_BASE: "file:///etc/passwd" })).toThrow(/TELEGRAM_API_BASE/);
   });
 });
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+/**
+ * Docker Compose passes every optional variable as an EMPTY STRING when it is unset (`VAR=${VAR:-}`), and
+ * `cp .env.example .env` ships them blank. Empty must therefore mean exactly "not set" everywhere.
+ * (Regression: TELEGRAM_API_BASE= made the worker refuse to start in every compose deployment.)
+ */
+describe("empty environment variables behave exactly like unset ones", () => {
+  const REPO = join(import.meta.dirname, "..", "..");
+  const parseEnvFile = (text: string): Record<string, string> =>
+    Object.fromEntries(
+      text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#") && l.includes("="))
+        .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)])
+    );
+
+  const compose = readFileSync(join(REPO, "docker-compose.yml"), "utf8");
+  const workerBlock = compose.slice(compose.indexOf("\n  worker:"), compose.indexOf("\n  web:"));
+  const composeVars = [...workerBlock.matchAll(/^\s+- ([A-Z][A-Z0-9_]+)=\$\{/gm)].map((m) => m[1]);
+
+  it("finds the compose pass-through list (guards against scanning nothing)", () => {
+    expect(composeVars.length).toBeGreaterThan(25);
+    expect(composeVars).toContain("TELEGRAM_API_BASE");
+  });
+
+  it("the worker config is identical when every compose-passed variable is an empty string", () => {
+    const allEmpty = Object.fromEntries(composeVars.map((v) => [v, ""]));
+    expect(loadWorkerConfig(allEmpty)).toEqual(loadWorkerConfig({}));
+  });
+
+  it("each variable individually: empty never throws and never changes the result", () => {
+    const base = loadWorkerConfig({});
+    for (const v of composeVars) expect(loadWorkerConfig({ [v]: "" }), v).toEqual(base);
+  });
+
+  it("whitespace-only values are also treated as unset", () => {
+    expect(loadWorkerConfig({ TELEGRAM_API_BASE: "   ", AI_MODEL: "  ", ANTHROPIC_MODEL: "m-a" })).toMatchObject({ ai: { model: "m-a" } });
+  });
+
+  it("an empty AI_MODEL does not mask ANTHROPIC_MODEL (the fallback chain skips blanks)", () => {
+    expect(loadWorkerConfig({ AI_MODEL: "", ANTHROPIC_MODEL: "claude-x" }).ai.model).toBe("claude-x");
+  });
+
+  it("the shipped .env.example loads without error and equals the defaults", () => {
+    const fromExample = parseEnvFile(readFileSync(join(REPO, ".env.example"), "utf8"));
+    expect(Object.keys(fromExample).length).toBeGreaterThan(30);
+    expect(loadWorkerConfig(fromExample)).toEqual(loadWorkerConfig({}));
+  });
+});

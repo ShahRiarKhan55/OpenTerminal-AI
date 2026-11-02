@@ -86,7 +86,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
   const chatId = (env.TELEGRAM_CHAT_ID ?? "").trim();
   if (token && !/^\d{6,}:[A-Za-z0-9_-]{20,}$/.test(token)) problems.push("TELEGRAM_BOT_TOKEN does not look like a Telegram bot token");
   if (chatId && !/^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{3,31})$/.test(chatId)) problems.push("TELEGRAM_CHAT_ID must be a numeric chat id or @channelname");
-  const telegramApiBase = (env.TELEGRAM_API_BASE ?? "https://api.telegram.org").trim().replace(/\/+$/, "");
+  const telegramApiBase = (env.TELEGRAM_API_BASE?.trim() || "https://api.telegram.org").replace(/\/+$/, "");
   if (!/^https?:\/\/[^\s/]+(:\d+)?$/.test(telegramApiBase)) problems.push("TELEGRAM_API_BASE must be an http(s) origin");
   const telegramEnabled = bool("TELEGRAM_ENABLED", true) && Boolean(token && chatId);
 
@@ -119,7 +119,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     },
     ai: {
       enabled: aiEnabled,
-      model: (env.AI_MODEL ?? env.ANTHROPIC_MODEL ?? "claude-sonnet-5-5").trim() || "claude-sonnet-5-5",
+      model: env.AI_MODEL?.trim() || env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-5-5",
       dailyLimit: aiDailyLimit,
       maxTokens: int("AI_MAX_TOKENS", 500, 100, 4000),
       minIntervalSec: int("AI_MIN_INTERVAL_SEC", 30, 0, 3600),
