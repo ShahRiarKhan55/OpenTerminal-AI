@@ -112,6 +112,11 @@ export class World {
     this.quotes.set(symbol, { ...(this.quotes.get(symbol) ?? {}), price, ...extra } as QuoteSpec);
   }
 
+  /** Replace a symbol's whole spec (drops any previous overrides such as a bad timestamp). */
+  resetPrice(symbol: string, price: number) {
+    this.quotes.set(symbol, { price } as QuoteSpec);
+  }
+
   /** Every instrument (benchmarks included) reports a closed market, like a holiday. */
   closeMarket() {
     for (const [sym, q] of this.quotes) this.quotes.set(sym, { ...q, marketState: "Market Closed" });

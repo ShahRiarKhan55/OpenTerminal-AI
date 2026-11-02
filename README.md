@@ -49,6 +49,7 @@ No signup. No credit card. No rate‑limited demo tier. Clone it, `npm install`,
 - 📅 **Calendar** — economic events (Fed, ECB, CPI, NFP and more) with consensus forecast, previous reading and, for the major US/EU releases, the actual outcome; plus a per‑watchlist earnings calendar with click‑through history showing forecast vs. actual EPS for the last several quarters and the stock's next‑day price move
 - 🤖 **AI assistant** (optional) — ask questions about the symbol you're looking at, powered by Claude, fully context‑aware of the terminal's current data
 - ⚡ **Near real‑time updates** — quotes and indexes refresh every second with a subtle flash on change, so you always know what just moved
+- 🧭 **Day-trader monitor (paper trading)** — a separate worker watches your server-side watchlist, applies a freshness gate to every price, detects deterministic setups (opening-range and 20-day breakouts) and events, runs them through a risk engine (sizing, daily loss limit, kill switch) and records **simulated** trades in a paper ledger. Alerts land on the dashboard and, optionally, Telegram; Claude explains rare events under a hard daily budget. **No real-money execution exists** — see [docs/SAFETY.md](docs/SAFETY.md)
 - ⌨️ **Keyboard shortcuts** everywhere — `⌘K` to search, `⌥1`–`⌥9` to add any widget
 
 <br/>
@@ -140,6 +141,15 @@ Two optional knobs for the assistant, both standard for the Anthropic SDK:
 - `ANTHROPIC_BASE_URL` — point the assistant at an Anthropic-compatible endpoint (a self-hosted gateway, an EU-hosted relay, etc.) instead of api.anthropic.com.
 - `ANTHROPIC_MODEL` — override the model sent in requests (default: `claude-opus-4-8`). Required when the endpoint behind `ANTHROPIC_BASE_URL` serves models under different ids.
 
+### Day-trader monitor (paper trading)
+
+```bash
+npm run dev          # API + web
+npm run dev:worker   # in a second terminal: the monitoring worker
+```
+
+Open the dashboard and click **DAY TRADER LAYOUT** in the sidebar. The worker only produces alerts and paper trades from prices that pass the freshness gate during market hours; outside the session it idles and says so in the **Monitor** widget. Optional Telegram and AI settings, risk limits and every environment variable are in [docs/CONFIGURATION.md](docs/CONFIGURATION.md); the design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). To explore the dashboard without waiting for a market session: `DATA_DIR=/tmp/ot-demo npm run seed:demo -w server`, then start the stack with the same `DATA_DIR` (the script refuses to touch a database that already has real activity).
+
 ### Security defaults
 
 - The API binds to `127.0.0.1` and only accepts browser requests from `http://localhost:3000` by default — nothing else on your network can reach it out of the box.
@@ -177,7 +187,11 @@ Portfolio data persists in the `terminal-data` volume (SQLite, WAL mode). Ports 
 ├── server/                  # Express + TypeScript API
 │   └── src/
 │       ├── providers/       # nasdaq, tradingview, yahoo, stooq, fred, econcalendar, coingecko, binance, news
-│       ├── routes/          # market, portfolio, ai
+│       ├── routes/          # market, portfolio, ai, engine API (trading.ts)
+│       ├── engine/          # indicators, strategies, risk, paper ledger (pure / SQLite-only)
+│       ├── marketdata/      # freshness gate, observations, quote aggregation
+│       ├── notify/          # alerts, Telegram, budgeted AI
+│       ├── worker/          # the monitoring process
 │       ├── cache.ts         # TTL cache with stale-while-revalidate fallback
 │       └── db.ts            # SQLite (better-sqlite3, WAL)
 └── web/                      # Next.js 15 + React 19 + Tailwind 4
@@ -195,7 +209,8 @@ Run tests with `npm test` (Vitest, no network calls). CI runs on every push — 
 
 - [ ] Chart drawing tools & multi‑asset comparison overlay
 - [ ] Black‑Scholes Greeks on the options chain
-- [ ] Price alerts with desktop notifications
+- [x] Price/setup alerts (dashboard + Telegram) and paper trading
+- [ ] Crypto monitoring (data model is ready; see docs/ARCHITECTURE.md)
 - [ ] PostgreSQL as an alternative to SQLite
 
 Have an idea? [Open an issue](../../issues) — contributions are very welcome.
@@ -214,6 +229,8 @@ Please open an issue first for anything non‑trivial so we can align on approac
 <br/>
 
 ## Known limitations
+
+- The day-trader monitor uses free public data that is delayed or indicative. It is a paper-trading research tool, not a trading system; strategy defaults are unoptimized. See [docs/SAFETY.md](docs/SAFETY.md).
 
 - `npm audit` still flags two dependency advisories this project doesn't force-fix: `fast-xml-parser`'s XMLBuilder injection (moderate) doesn't apply here — only `XMLParser` is used, never `XMLBuilder` — and `postcss`'s high-severity issue is bundled inside Next.js itself, only resolved by a Next 16 major upgrade. Both are tracked, neither is silently ignored.
 - If you deploy behind a reverse proxy or load balancer, set `API_HOST`/`WEB_ORIGIN` to match, and terminate TLS in front of it — this project doesn't handle HTTPS itself.

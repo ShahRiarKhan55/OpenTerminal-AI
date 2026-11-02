@@ -65,7 +65,9 @@ export async function handleCandidate(ctx: TickCtx, c: SignalCandidate, o: Obs):
 
   audit(db, { kind: "signal", symbol: c.symbol, decision: "detected", reason: c.strategy, detail: { signalId: row.id, entry: c.entry, stop: c.stop, target: c.target, meta: c.meta } }, now);
 
-  const fill = applySlippage(Math.max(price, c.entry), "BUY", risk.slippageBps);
+  // Screen the IDEA at its planned entry. Whether today's price is too extended to buy right now is a
+  // fill-time question (tryEntry), because a pullback can still make it tradable.
+  const fill = applySlippage(c.entry, "BUY", risk.slippageBps);
   const verdict = checkRisk(verdictInput(row, fill, o.quote), loadRiskState(db, now), risk, now);
   if (!verdict.pass) {
     blockSignal(ctx, row, verdict.reasons, verdict);
@@ -142,7 +144,15 @@ export async function tryEntry(ctx: TickCtx, row: SignalRow, o: Obs): Promise<vo
     case "fill": {
       const fill = applySlippage(d.refPrice, "BUY", risk.slippageBps);
       const verdict = checkRisk(verdictInput(row, fill, o.quote), loadRiskState(db, now), risk, now);
-      if (!verdict.pass) return blockSignal(ctx, row, verdict.reasons, verdict);
+      if (!verdict.pass) {
+        // Reward/risk alone failing means price is too high RIGHT NOW: keep waiting for a pullback.
+        // Any other failure (limits, window, cash, kill switch...) is a real "no" and is final.
+        if (verdict.reasons.length === 1 && verdict.reasons[0] === "reward_risk_too_low") {
+          if (row.reason !== "extended") db.prepare("UPDATE signals SET reason = 'extended', updated_at = ? WHERE id = ? AND status = 'pending'").run(now, row.id);
+          return;
+        }
+        return blockSignal(ctx, row, verdict.reasons, verdict);
+      }
       try {
         const { id, created } = openPosition(db, {
           signalId: row.id, symbol: row.symbol, strategy: row.strategy, qty: verdict.qty, fillPrice: fill, stop: row.stop, target: row.target,

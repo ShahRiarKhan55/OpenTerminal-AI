@@ -151,6 +151,87 @@ describe("data safety: stale, incomplete and out-of-session data never trigger a
   });
 });
 
+describe("pending entries: extended breakouts, pullbacks, and stale data", () => {
+  const ready = () => {
+    const w = new World();
+    w.intraday.set("ABC", orbBars());
+    return w;
+  };
+
+  it("an extended breakout stays PENDING (not blocked), announces the idea once, and fills on a pullback", async () => {
+    const w = ready();
+    await w.tick(9, 58);
+    w.setPrice("ABC", 101.6); // already well past entry 101.0 + 0.5R
+    await w.tick(10, 5, 30);
+    expect(w.one<{ status: string; reason: string }>("SELECT status, reason FROM signals")).toEqual({ status: "pending", reason: "extended" });
+    expect(w.count("paper_positions")).toBe(0);
+    expect(w.alertTypes()).toEqual(["signal"]);
+
+    w.setPrice("ABC", 101.0); // pulls back to the entry
+    await w.tick(10, 9);
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("filled");
+    expect(w.count("paper_positions", "status = 'open'")).toBe(1);
+    expect(w.alertTypes()).toEqual(["signal", "position_opened"]);
+  });
+
+  it("a price inside the chase limit but with poor reward/risk waits instead of being blocked", async () => {
+    const w = ready();
+    await w.tick(9, 58);
+    w.setPrice("ABC", 101.2); // <= entry + 0.5R (101.25) but reward/risk after slippage is below 1.5
+    await w.tick(10, 5, 30);
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("pending");
+    expect(w.count("alerts", "type = 'signal_blocked'")).toBe(0);
+    w.setPrice("ABC", 101.0);
+    await w.tick(10, 8);
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("filled");
+  });
+
+  it("a breakout that never pulls back is reported as skipped_chase when it expires", async () => {
+    const w = ready();
+    await w.tick(9, 58);
+    w.setPrice("ABC", 101.6);
+    await w.tick(10, 5, 30);
+    await w.tick(10, 20);
+    await w.tick(10, 30); // validity (20 min after the breakout bar closes) has passed
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("skipped_chase");
+    expect(w.count("paper_positions")).toBe(0);
+  });
+
+  it("a non-price risk failure at fill time is final (blocked), even though the price looks fine", async () => {
+    const w = ready();
+    await w.tick(9, 58);
+    w.setPrice("ABC", 101.6);
+    await w.tick(10, 5, 30);
+    saveRiskConfig(w.db, { tradingEnabled: false }, 1); // kill switch thrown while the signal waits
+    w.setPrice("ABC", 101.0);
+    await w.tick(10, 9);
+    expect(w.one<{ status: string; reason: string }>("SELECT status, reason FROM signals")).toMatchObject({ status: "blocked", reason: expect.stringContaining("trading_disabled") });
+    expect(w.count("paper_positions")).toBe(0);
+  });
+
+  it.each([
+    ["a stale timestamp", { time: Math.floor(at(10, 9) / 1000) - 3600 }],
+    ["a missing timestamp", { time: null }],
+    ["a pre-market state", { marketState: "Pre-Market" }],
+    ["a last-known fallback", { servedStale: true }],
+  ] as const)("a PENDING signal never fills on %s, and fills once data is good again", async (_n, bad) => {
+    const w = ready();
+    await w.tick(9, 58);
+    w.setPrice("ABC", 101.6);
+    await w.tick(10, 5, 30);
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("pending");
+
+    w.setPrice("ABC", 101.0, bad as never); // price is in the buy zone, but the data is not trustworthy
+    await w.tick(10, 9);
+    expect(w.count("paper_positions")).toBe(0);
+    expect(w.one<{ status: string }>("SELECT status FROM signals").status).toBe("pending");
+
+    w.resetPrice("ABC", 101.0); // data is trustworthy again
+    await w.tick(10, 10);
+    expect(w.count("paper_positions", "status = 'open'")).toBe(1);
+  });
+});
+
 describe("risk management", () => {
   it("blocks the signal (and says why) when the position cap is reached, without a Telegram message", async () => {
     const w = new World({ symbols: ["ABC", "XYZ"] });

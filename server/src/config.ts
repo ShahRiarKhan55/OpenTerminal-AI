@@ -14,7 +14,6 @@ export type WorkerConfig = {
   maxCandleLagSec: number;
   newsEnabled: boolean;
   newsRefreshSeconds: number;
-  alertCooldownMinutes: number;
   alertDailyCap: number;
   retentionDays: number;
   freshness: FreshnessPolicy;
@@ -107,7 +106,6 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     maxCandleLagSec: int("MAX_CANDLE_LAG_SEC", 900, 60, 7200),
     newsEnabled: bool("MONITOR_NEWS_ENABLED", true),
     newsRefreshSeconds: int("MONITOR_NEWS_REFRESH_SECONDS", 900, 300, 86_400),
-    alertCooldownMinutes: int("ALERT_COOLDOWN_MINUTES", 60, 1, 1440),
     alertDailyCap: int("ALERT_DAILY_CAP", 60, 1, 1000),
     retentionDays: int("DATA_RETENTION_DAYS", 90, 7, 3650),
     freshness: { ...DEFAULT_POLICY, ...policy },
