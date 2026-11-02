@@ -118,3 +118,22 @@ describe("Dockerfiles", () => {
     for (const p of [".git", ".env", "data", "**/node_modules"]) expect(ig).toContain(p);
   });
 });
+
+describe("release metadata", () => {
+  const version = (p: string) => JSON.parse(read(p)).version as string;
+  it("root, server and web manifests share one version, and the API reports it", () => {
+    const v = version("package.json");
+    expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(version("server/package.json")).toBe(v);
+    expect(version("web/package.json")).toBe(v);
+    expect(read("server/src/routes/trading.ts")).toContain(`const SECRETLESS_VERSION = "${v}";`);
+  });
+  it("the changelog documents the current version", () => {
+    expect(read("CHANGELOG.md")).toContain(`## ${version("package.json")}`);
+  });
+  it("keeps the upstream licence and attribution", () => {
+    expect(read("LICENSE")).toMatch(/MIT License/);
+    expect(read("NOTICE.md")).toMatch(/ErTasselli\/OpenTerminal/);
+    expect(read("NOTICE.md")).toMatch(/day-trader-skill/);
+  });
+});
