@@ -27,6 +27,7 @@ Components: **api** = Express server, **worker** = monitoring process, **web** =
 | `API_HOST` | api | `127.0.0.1` | Bind address. Keep loopback unless you deliberately expose the API. |
 | `API_PORT` | api | `4000` | API port. |
 | `API_URL` | web | `http://localhost:4000` | Where the web proxy reaches the API. |
+| `ALLOWED_HOSTS` | web | `localhost,127.0.0.1,[::1]` (always allowed) | Extra hostnames (comma-separated, no ports) the dashboard may be served from, e.g. `terminal.example.com`. The web proxy refuses any other `Host` header: this is what stops DNS-rebinding attacks from borrowing the API key. |
 | `TRUST_PROXY` | api | unset | Set to `1` **only** behind exactly one trusted reverse proxy (affects per-IP rate limits). |
 | `DATA_DIR` | api, worker | `./data` | Directory for the SQLite database (`terminal.db`), generated key and `backups/`. api and worker must point at the same directory. |
 

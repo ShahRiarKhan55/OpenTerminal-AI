@@ -1,10 +1,11 @@
-import express, { Router } from "express";
+import express, { Router, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import { marketRouter } from "./routes/market.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { aiRouter } from "./routes/ai.js";
 import { allStats } from "./providers/registry.js";
 import { requireApiKey } from "./auth.js";
+import { redact } from "./log.js";
 import { rateLimit } from "./rateLimit.js";
 import { summarize } from "./marketdata/ledger.js";
 import { tradingRouter, TRADING_PREFIXES } from "./routes/trading.js";
@@ -12,6 +13,7 @@ import { freshnessPolicyFromEnv } from "./marketdata/freshness.js";
 
 export function createApp() {
 const app = express();
+app.disable("x-powered-by"); // don't advertise the framework
 
 // Off by default: req.ip then falls back to the immediate socket address
 // (the bundled web proxy's own address when called through it), so every
@@ -31,7 +33,16 @@ if (process.env.TRUST_PROXY === "1") {
 // origin.
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 app.use(cors({ origin: webOrigin }));
-app.use(express.json());
+// API responses are JSON data, never cacheable, never sniffable, never framed.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  next();
+});
+// Every legitimate body here is a few hundred bytes; a small cap blunts memory-exhaustion attempts.
+app.use(express.json({ limit: "64kb" }));
 
 // No API key here by design (market.ts routes proxy free, keyless public data),
 // but still bounded per-IP: unlike /api/ai and /api/portfolios, an unauthenticated
@@ -68,6 +79,21 @@ app.get("/api/status", (_req, res) => {
     ai: Boolean(process.env.ANTHROPIC_API_KEY),
   });
 });
+
+// Unknown API routes answer JSON, not an HTML error page.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "not found" });
+});
+
+// Last line of defence: never leak a stack trace or internals to a client.
+const onError: ErrorRequestHandler = (err, _req, res, _next) => {
+  const type = (err as { type?: string } | null)?.type;
+  if (type === "entity.too.large") return void res.status(413).json({ error: "request body too large" });
+  if (type === "entity.parse.failed" || err instanceof SyntaxError) return void res.status(400).json({ error: "invalid JSON body" });
+  console.error("[api] unhandled error:", redact(err instanceof Error ? err.message : String(err)));
+  res.status(500).json({ error: "internal error" });
+};
+app.use(onError);
 
 return app;
 }

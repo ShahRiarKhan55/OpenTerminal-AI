@@ -1,3 +1,6 @@
+/** Sent on every state-changing request; the proxy refuses mutations without it (CSRF defence). */
+const MUTATION_HEADERS = { "X-Requested-With": "openterminal" } as const;
+
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
@@ -10,7 +13,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...MUTATION_HEADERS },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -24,7 +27,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiSend<T = unknown>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: body === undefined ? { ...MUTATION_HEADERS } : { "Content-Type": "application/json", ...MUTATION_HEADERS },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
@@ -35,7 +38,7 @@ export async function apiSend<T = unknown>(method: "POST" | "PUT" | "PATCH" | "D
 }
 
 export async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(path, { method: "DELETE" });
+  const res = await fetch(path, { method: "DELETE", headers: { ...MUTATION_HEADERS } });
   if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
 }
 

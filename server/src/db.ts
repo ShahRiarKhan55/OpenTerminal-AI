@@ -10,8 +10,9 @@ import { DEFAULT_WATCHLIST_SYMBOLS, runMigrations } from "./migrations.js";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const dataDir = process.env.DATA_DIR ?? join(root, "data");
 export const backupDir = join(dataDir, "backups");
-mkdirSync(dataDir, { recursive: true });
-mkdirSync(backupDir, { recursive: true });
+// The database, backups and generated API key are private to this user.
+mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+mkdirSync(backupDir, { recursive: true, mode: 0o700 });
 
 export const db = new Database(join(dataDir, "terminal.db"));
 db.pragma("journal_mode = WAL");
