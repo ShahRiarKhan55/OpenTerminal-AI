@@ -35,7 +35,10 @@ async function nfetch(url: string): Promise<any> {
 
 const money = (s: unknown): number | null => {
   if (typeof s !== "string") return null;
-  const n = Number(s.replace(/[$,]/g, ""));
+  const cleaned = s.replace(/[$,]/g, "").trim();
+  // Number("") is 0: an empty field (Nasdaq sends "" for bid/ask outside the session) must stay "unknown".
+  if (cleaned === "") return null;
+  const n = Number(cleaned);
   return isFinite(n) ? n : null;
 };
 

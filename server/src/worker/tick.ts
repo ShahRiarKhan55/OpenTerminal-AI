@@ -76,6 +76,9 @@ export async function runTick(deps: WorkerDeps, rt: Runtime): Promise<TickSummar
   const pending = pendingSignals(db);
   const needed = [...new Set([...watch, ...open.map((p) => p.symbol), ...pending.map((s) => s.symbol), ...BENCHMARKS])];
   summary.symbols = watch.length;
+  // Memory stays proportional to what is being watched: drop cached candles for symbols that left.
+  const stillNeeded = new Set(needed);
+  for (const cache of [rt.intraday, rt.daily]) for (const sym of cache.keys()) if (!stillNeeded.has(sym)) cache.delete(sym);
 
   // ---- 1. quotes -> observations -> freshness verdicts ----
   const obs = new Map<string, Obs>();
