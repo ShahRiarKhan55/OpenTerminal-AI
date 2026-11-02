@@ -26,7 +26,7 @@ jobs:
       # `npm ci` installs exactly what package-lock.json pins (and fails if the
       # lockfile is out of sync), so CI is reproducible. `npm install` is not.
       - run: npm ci
-      - run: npm run test -w server
+      - run: npm test # server + web unit/integration/security tests
       - run: npm run build -w server
       - run: npm run build -w web
 
@@ -43,3 +43,26 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
+
+  # Real browser + real processes: the dashboard against a seeded stack, a cross-origin attacker page,
+  # and the compiled worker. Slow (~1-2 min), so it runs after the fast checks succeed.
+  e2e:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e/out/
+          if-no-files-found: ignore

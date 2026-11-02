@@ -19,9 +19,11 @@
     "test": "npm run test -w server && npm run test -w web",
     "lint": "npm run lint -w web",
     "dev:worker": "npm run dev:worker -w server",
-    "start:worker": "npm run start:worker -w server"
+    "start:worker": "npm run start:worker -w server",
+    "e2e": "bash e2e/run.sh"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "playwright": "1.63.0"
   }
 }

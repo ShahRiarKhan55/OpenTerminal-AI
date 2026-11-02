@@ -150,6 +150,8 @@ npm run dev:worker   # in a second terminal: the monitoring worker
 
 Open the dashboard and click **DAY TRADER LAYOUT** in the sidebar. The worker only produces alerts and paper trades from prices that pass the freshness gate during market hours; outside the session it idles and says so in the **Monitor** widget. Optional Telegram and AI settings, risk limits and every environment variable are in [docs/CONFIGURATION.md](docs/CONFIGURATION.md); the design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). To explore the dashboard without waiting for a market session: `DATA_DIR=/tmp/ot-demo npm run seed:demo -w server`, then start the stack with the same `DATA_DIR` (the script refuses to touch a database that already has real activity).
 
+**Running it always-on (VPS, Docker Compose, backups, upgrades):** see [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 ### Security defaults
 
 - The API binds to `127.0.0.1` and only accepts browser requests from `http://localhost:3000` by default — nothing else on your network can reach it out of the box.
