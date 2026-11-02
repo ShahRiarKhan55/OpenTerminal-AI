@@ -57,3 +57,56 @@ export function parseNasdaqTimestamp(text: unknown): number | null {
   const ms = easternToEpochMs(Number(m[3]), month, Number(m[2]), hour, minute);
   return ms === null ? null : Math.floor(ms / 1000);
 }
+
+const etDateParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  weekday: "short",
+});
+
+export type EtClock = {
+  /** Exchange-local calendar date, YYYY-MM-DD. */
+  dateKey: string;
+  /** Minutes since local midnight, 0..1439. */
+  minutes: number;
+  /** 0 = Sunday .. 6 = Saturday. */
+  weekday: number;
+  isWeekday: boolean;
+};
+
+const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Wall-clock view of an instant in America/New_York (DST-aware). */
+export function etClock(ms: number): EtClock {
+  const p: Record<string, string> = {};
+  for (const part of etDateParts.formatToParts(new Date(ms))) p[part.type] = part.value;
+  const weekday = WEEKDAYS[p.weekday] ?? 0;
+  return {
+    dateKey: `${p.year}-${p.month}-${p.day}`,
+    minutes: Number(p.hour) * 60 + Number(p.minute),
+    weekday,
+    isWeekday: weekday >= 1 && weekday <= 5,
+  };
+}
+
+/** "HH:MM" -> minutes since midnight; null when malformed. */
+export function parseHm(hm: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hm);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/** [start, end) epoch-ms bounds of an ET calendar day (23/25h on DST changes). */
+export function etDayBounds(dateKey: string): { startMs: number; endMs: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  const next = new Date(Date.UTC(y, mo, d + 1));
+  const start = easternToEpochMs(y, mo, d, 0, 0);
+  const end = easternToEpochMs(next.getUTCFullYear(), next.getUTCMonth(), next.getUTCDate(), 0, 0);
+  return start === null || end === null ? null : { startMs: start, endMs: end };
+}

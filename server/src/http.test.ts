@@ -40,6 +40,15 @@ describe("httpFetch", () => {
     );
   });
 
+  it("keeps a Telegram bot token (in the URL path) out of timeout errors", async () => {
+    vi.stubGlobal("fetch", hangingFetch());
+    const url = "https://api.telegram.org/bot123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0/sendMessage";
+    const err = await httpFetch(url, {}, 20).catch((e) => e);
+    expect(err).toBeInstanceOf(FetchTimeoutError);
+    expect(err.message).not.toContain("AAHdq");
+    expect(err.message).toBe("timeout after 20ms for https://api.telegram.org/bot[REDACTED]/sendMessage");
+  });
+
   it("does not relabel a caller abort as a timeout", async () => {
     vi.stubGlobal("fetch", hangingFetch());
     const ctl = new AbortController();

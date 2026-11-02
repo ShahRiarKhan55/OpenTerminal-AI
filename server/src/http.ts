@@ -15,7 +15,8 @@ export class FetchTimeoutError extends Error {
 function redact(url: string): string {
   try {
     const u = new URL(url);
-    return u.origin + u.pathname;
+    // Telegram embeds the bot token in the URL PATH (/bot<token>/method).
+    return u.origin + u.pathname.replace(/\/bot\d+:[^/]+/g, "/bot[REDACTED]");
   } catch {
     return "<invalid url>";
   }
