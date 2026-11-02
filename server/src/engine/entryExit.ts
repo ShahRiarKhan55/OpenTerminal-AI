@@ -10,18 +10,19 @@ export function applySlippage(price: number, side: "BUY" | "SELL", bps: number):
 
 export type EntryDecision =
   | { action: "fill"; refPrice: number }
-  | { action: "wait" }
+  /** `extended`: price is already past the chase limit; a pullback into the entry zone can still fill. */
+  | { action: "wait"; extended: boolean }
   | { action: "expire" }
-  | { action: "invalidate" }
-  | { action: "skip_chase" };
+  | { action: "invalidate" };
 
 /**
  * Where is a pending long signal, given the latest FRESH price?
  *  expire      validity window elapsed
  *  invalidate  price fell to/below the stop before we ever got in
- *  wait        below the entry level (breakout not (re)confirmed)
- *  skip_chase  already more than maxChaseR past entry: the plan's reward/risk is gone
+ *  wait        below the entry level (breakout not (re)confirmed), or extended beyond
+ *              entry + maxChaseR x R (we never chase; a pullback into the zone is still tradable)
  *  fill        at/above entry and within the chase limit
+ * The risk gate then re-checks reward/risk at the actual fill price.
  */
 export function evaluateEntry(
   sig: { entry: number; stop: number; riskPerShare: number; validUntilMs: number },
@@ -31,8 +32,8 @@ export function evaluateEntry(
 ): EntryDecision {
   if (nowMs > sig.validUntilMs) return { action: "expire" };
   if (price <= sig.stop) return { action: "invalidate" };
-  if (price < sig.entry) return { action: "wait" };
-  if (price > sig.entry + cfg.maxChaseR * sig.riskPerShare) return { action: "skip_chase" };
+  if (price < sig.entry) return { action: "wait", extended: false };
+  if (price > sig.entry + cfg.maxChaseR * sig.riskPerShare) return { action: "wait", extended: true };
   return { action: "fill", refPrice: price };
 }
 

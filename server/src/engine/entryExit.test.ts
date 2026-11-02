@@ -23,10 +23,14 @@ describe("evaluateEntry", () => {
   });
   it("fills at exactly the chase limit (entry + 0.5R = 101) but not past it", () => {
     expect(evaluateEntry(sig, 101, now, cfg).action).toBe("fill");
-    expect(evaluateEntry(sig, 101.01, now, cfg).action).toBe("skip_chase");
+    expect(evaluateEntry(sig, 101.01, now, cfg)).toEqual({ action: "wait", extended: true });
   });
   it("waits while price is below entry but above the stop", () => {
-    expect(evaluateEntry(sig, 99.5, now, cfg)).toEqual({ action: "wait" });
+    expect(evaluateEntry(sig, 99.5, now, cfg)).toEqual({ action: "wait", extended: false });
+  });
+  it("never chases, but a pullback into the entry zone is still tradable", () => {
+    expect(evaluateEntry(sig, 103, now, cfg)).toEqual({ action: "wait", extended: true });
+    expect(evaluateEntry(sig, 100.6, now, cfg)).toEqual({ action: "fill", refPrice: 100.6 });
   });
   it("invalidates at or below the stop, even if the window is still open", () => {
     expect(evaluateEntry(sig, 98, now, cfg).action).toBe("invalidate");
@@ -38,7 +42,7 @@ describe("evaluateEntry", () => {
   });
   it("with maxChaseR 0 only fills exactly at the entry level", () => {
     expect(evaluateEntry(sig, 100, now, { maxChaseR: 0 }).action).toBe("fill");
-    expect(evaluateEntry(sig, 100.01, now, { maxChaseR: 0 }).action).toBe("skip_chase");
+    expect(evaluateEntry(sig, 100.01, now, { maxChaseR: 0 })).toEqual({ action: "wait", extended: true });
   });
 });
 

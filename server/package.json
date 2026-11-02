@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dev:worker": "tsx watch src/worker/index.ts",
+    "start:worker": "node dist/worker/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -13,7 +13,7 @@ function sourceFiles(dir: string): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
-    else if (p.endsWith(".ts") && !p.endsWith(".test.ts") && !p.endsWith("test-helpers.ts")) out.push(p);
+    else if (p.endsWith(".ts") && !p.endsWith(".test.ts") && !/[\\/]test-[^\\/]*\.ts$/.test(p)) out.push(p);
   }
   return out;
 }
@@ -30,8 +30,17 @@ describe("no brokerage execution exists in the codebase", () => {
     "tradestation", "oanda", "fidelity", "tastytrade", "tastyworks", "degiro", "trading212", "saxo", "ig.com",
   ];
   it.each(BROKER_HOSTS)("never references the brokerage host/vendor %s", (host) => {
-    const hits = FILES.filter((f) => f.text.toLowerCase().includes(host)).map((f) => f.path);
-    expect(hits).toEqual([]);
+    // Word-boundary match so a short vendor like "ig.com" doesn't fire inside "config.commission...".
+    const re = new RegExp("(^|[^a-z0-9])" + host.replace(/\./g, "\\.") + "(?![a-z0-9])", "i");
+    expect(FILES.filter((f) => re.test(f.text)).map((f) => f.path)).toEqual([]);
+  });
+
+  it("the host matcher really does catch genuine broker hostnames (guards against a no-op test)", () => {
+    const re = (h: string) => new RegExp("(^|[^a-z0-9])" + h.replace(/\./g, "\\.") + "(?![a-z0-9])", "i");
+    expect(re("alpaca.markets").test('fetch("https://paper-api.alpaca.markets/v2/orders")')).toBe(true);
+    expect(re("ig.com").test("https://api.ig.com/gateway")).toBe(true);
+    expect(re("ig.com").test("loadRiskConfig(db).config.commissionPerOrder")).toBe(false);
+    expect(re("schwab").test("const schwab = new Client()")).toBe(true);
   });
 
   const ORDER_APIS = [/place[_-]?order/i, /submit[_-]?order/i, /create[_-]?order/i, /new[_-]?order/i, /\/v3\/order/i, /mcp__alpaca/i, /place_stock_order/i, /cancel_all_orders/i];

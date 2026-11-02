@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Router } from "express";
 import cors from "cors";
 import { marketRouter } from "./routes/market.js";
 import { portfolioRouter } from "./routes/portfolio.js";
@@ -7,6 +7,7 @@ import { allStats } from "./providers/registry.js";
 import { requireApiKey } from "./auth.js";
 import { rateLimit } from "./rateLimit.js";
 import { summarize } from "./marketdata/ledger.js";
+import { tradingRouter, TRADING_PREFIXES } from "./routes/trading.js";
 import { freshnessPolicyFromEnv } from "./marketdata/freshness.js";
 
 export function createApp() {
@@ -38,6 +39,15 @@ app.use(express.json());
 // hundreds of outbound calls per request — see getQuotes) fast enough to get
 // this deployment's IP rate-limited or banned by Nasdaq/Yahoo/Stooq/SEC.
 app.use("/api", rateLimit({ windowMs: 60_000, max: 240 }), marketRouter);
+// Monitoring engine (watchlists, alerts, signals, paper trading, risk, reports, audit): every route
+// requires the shared secret and is rate limited per caller. The guard only engages for these
+// prefixes, so the keyless market-data routes above are unaffected. See routes/trading.ts.
+const guardedTrading = Router();
+guardedTrading.use(requireApiKey, rateLimit({ windowMs: 60_000, max: 300 }), tradingRouter);
+app.use("/api", (req, res, next) => {
+  if (TRADING_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + "/"))) return guardedTrading(req, res, next);
+  next();
+});
 // Portfolio data and the paid AI endpoint require a shared secret; see auth.ts.
 app.use("/api/portfolios", requireApiKey, portfolioRouter);
 app.use(

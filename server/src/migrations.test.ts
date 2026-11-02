@@ -88,6 +88,29 @@ describe("runMigrations", () => {
     expect(tables(db)).not.toContain("half_done");
   });
 
+  it("is safe when another process migrates between planning and applying (startup race)", () => {
+    const file = join(dir, "race.db");
+    const a = new Database(file);
+    const b = new Database(file);
+    // B plans to apply everything; before it does, A (the "other process") finishes the whole upgrade.
+    const r = runMigrations(b, { _afterPlan: () => void runMigrations(a) });
+    expect(r.applied).toEqual([]); // nothing left for B to do, and no "table already exists" crash
+    expect(b.pragma("user_version", { simple: true })).toBe(LATEST_VERSION);
+    expect((b.prepare("SELECT COUNT(*) c FROM sqlite_master WHERE name = 'watchlists'").get() as { c: number }).c).toBe(1);
+    a.close();
+    b.close();
+  });
+
+  it("applies a partially-upgraded database from where it left off", () => {
+    const file = join(dir, "partial.db");
+    const a = new Database(file);
+    runMigrations(a, { migrations: MIGRATIONS.slice(0, 2) });
+    const r = runMigrations(a);
+    expect(r.from).toBe(2);
+    expect(r.applied).toEqual(["3:events-alerts-signals-audit", "4:paper-trading-ai-reports"]);
+    a.close();
+  });
+
   it("refuses to open a database written by a newer build", () => {
     const db = new Database(":memory:");
     db.pragma(`user_version = ${LATEST_VERSION + 1}`);

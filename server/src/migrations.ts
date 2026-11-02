@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { existsSync } from "node:fs";
 
 /**
  * Ordered, append-only schema migrations. The applied version is stored in
@@ -217,7 +218,7 @@ export type MigrationResult = { from: number; to: number; applied: string[]; bac
  */
 export function runMigrations(
   db: Database.Database,
-  opts: { backupDir?: string; migrations?: Migration[]; now?: () => number } = {}
+  opts: { backupDir?: string; migrations?: Migration[]; now?: () => number; _afterPlan?: () => void } = {}
 ): MigrationResult {
   const migrations = opts.migrations ?? MIGRATIONS;
   const from = db.pragma("user_version", { simple: true }) as number;
@@ -234,17 +235,30 @@ export function runMigrations(
   if (opts.backupDir && (from > 0 || hasUserTables(db))) {
     const stamp = new Date((opts.now ?? Date.now)()).toISOString().replace(/[:.]/g, "-");
     const path = `${opts.backupDir}/pre-migration-v${from}-${stamp}.db`;
-    db.prepare("VACUUM INTO ?").run(path);
-    result.backupPath = path;
+    try {
+      db.prepare("VACUUM INTO ?").run(path);
+      result.backupPath = path;
+    } catch (err) {
+      // A concurrently starting process may have just written the same file; any other failure is fatal.
+      if (!existsSync(path)) throw err;
+      result.backupPath = path;
+    }
   }
 
+  opts._afterPlan?.(); // test seam: lets a test interleave a competing process here
+
   for (const m of pending) {
-    const apply = db.transaction(() => {
+    // The API and the worker are separate processes and may start together. IMMEDIATE takes the
+    // write lock up front, and the version is re-read INSIDE it, so exactly one process applies
+    // each migration and the other skips it instead of failing on "table already exists".
+    const apply = db.transaction((): boolean => {
+      const current = db.pragma("user_version", { simple: true }) as number;
+      if (current >= m.version) return false;
       db.exec(m.sql);
       db.pragma(`user_version = ${Math.trunc(m.version)}`);
+      return true;
     });
-    apply();
-    result.applied.push(`${m.version}:${m.name}`);
+    if (apply.immediate()) result.applied.push(`${m.version}:${m.name}`);
     result.to = m.version;
   }
   return result;
