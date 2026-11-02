@@ -51,6 +51,11 @@ export type Quote = {
   exchange: string | null;
   marketState: string | null;
   source: string;
+  /** Provider-reported time of the last print, epoch seconds. */
+  time?: number | null;
+  delayClass?: "realtime" | "delayed" | "eod" | "unknown";
+  servedStale?: boolean;
+  freshness?: { ok: boolean; reason: string; ageSec: number | null };
   sector?: string;
   label?: string;
 };

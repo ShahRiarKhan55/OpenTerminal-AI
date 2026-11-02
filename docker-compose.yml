@@ -14,6 +14,10 @@ services:
       - API_HOST=0.0.0.0 # safe: still only published to 127.0.0.1 above
       - WEB_ORIGIN=${WEB_ORIGIN:-http://localhost:3000}
       - DATA_DIR=/app/data
+      # Data-freshness gates for alert eligibility (see .env.example). Empty = default.
+      - MAX_QUOTE_AGE_SEC=${MAX_QUOTE_AGE_SEC:-}
+      - MAX_DELAYED_AGE_SEC=${MAX_DELAYED_AGE_SEC:-}
+      - ALERT_ALLOW_EXTENDED_HOURS=${ALERT_ALLOW_EXTENDED_HOURS:-}
       # Leave unset unless you put your own trusted reverse proxy in front of
       # the web service (see README > Security defaults) — otherwise a caller
       # could forge X-Forwarded-For to dodge the /api/ai rate limit.

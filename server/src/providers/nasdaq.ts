@@ -1,3 +1,5 @@
+import { httpFetch } from "../http.js";
+import { parseNasdaqTimestamp } from "../marketdata/time.js";
 import type { Quote, Candle } from "./yahoo.js";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -21,7 +23,7 @@ function release(): void {
 async function nfetch(url: string): Promise<any> {
   await acquire();
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await httpFetch(url, { headers: HEADERS });
     if (!res.ok) throw new Error(`nasdaq ${res.status} for ${url}`);
     const json = await res.json();
     if (!json?.data) throw new Error(`nasdaq: no data in response for ${url}`);
@@ -116,8 +118,10 @@ export async function quote(symbol: string): Promise<Quote> {
     currency: "USD",
     exchange: info.exchange ?? null,
     marketState: info.marketStatus ?? null,
-    time: null,
+    time: parseNasdaqTimestamp(info.primaryData?.lastTradeTimestamp),
     source: "nasdaq",
+    // Nasdaq flags each print; anything not explicitly real-time is treated as delayed.
+    delayClass: info.primaryData?.isRealTime === true ? "realtime" : "delayed",
   };
 }
 

@@ -6,6 +6,8 @@ export type ProviderStats = {
   avgLatencyMs: number | null;
   lastError: string | null;
   lastSuccess: string | null;
+  /** Seconds since the last successful call; null if it has never succeeded. */
+  lastSuccessAgeSec?: number | null;
 };
 
 const stats = new Map<string, ProviderStats>();
@@ -51,6 +53,9 @@ export async function withFallback<T>(attempts: Array<[string, () => Promise<T>]
   throw lastErr;
 }
 
-export function allStats(): ProviderStats[] {
-  return [...stats.values()];
+export function allStats(now: number = Date.now()): ProviderStats[] {
+  return [...stats.values()].map((s) => ({
+    ...s,
+    lastSuccessAgeSec: s.lastSuccess ? Math.round((now - Date.parse(s.lastSuccess)) / 1000) : null,
+  }));
 }

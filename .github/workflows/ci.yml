@@ -5,16 +5,43 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# A newer push to the same ref makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      # `npm ci` installs exactly what package-lock.json pins (and fails if the
+      # lockfile is out of sync), so CI is reproducible. `npm install` is not.
+      - run: npm ci
       - run: npm run test -w server
       - run: npm run build -w server
       - run: npm run build -w web
+
+  # Reported on every run but not blocking: the repo currently carries known
+  # advisories that need a deliberate dependency upgrade. Flip continue-on-error
+  # to false once `npm audit --omit=dev --audit-level=high` is clean.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high

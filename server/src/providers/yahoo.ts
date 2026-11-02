@@ -1,3 +1,5 @@
+import { httpFetch } from "../http.js";
+import type { DelayClass } from "../marketdata/types.js";
 // A single hardcoded User-Agent makes every self-hosted install share one
 // fingerprint: when the app's traffic grows, providers can throttle the whole
 // fleet by blocking that one string (observed: sustained HTTP 429 from Yahoo
@@ -46,8 +48,15 @@ export type Quote = {
   currency: string | null;
   exchange: string | null;
   marketState: string | null;
+  /** Provider-reported time of the last print, epoch SECONDS; null if the provider gave none. */
   time: number | null;
   source: string;
+  /** How timely the price is. Required so every provider must make an explicit claim. */
+  delayClass: DelayClass;
+  /** Epoch ms when this server obtained the value (set when stored in the quote cache). */
+  fetchedAt?: number | null;
+  /** True when this is a last-known fallback served after every provider failed. */
+  servedStale?: boolean;
 };
 
 export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
@@ -61,10 +70,10 @@ async function getSession(): Promise<{ cookie: string; crumb: string }> {
   if (session && Date.now() - session.fetched < 30 * 60 * 1000) return session;
   if (Date.now() < sessionFailedUntil) throw new Error("yahoo: crumb fetch failed (cached failure)");
   try {
-    const res = await fetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual" });
+    const res = await httpFetch("https://fc.yahoo.com/", { headers: { "User-Agent": UA }, redirect: "manual" });
     const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0];
     if (!cookie) throw new Error("yahoo: no session cookie");
-    const crumbRes = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+    const crumbRes = await httpFetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
       headers: { "User-Agent": UA, Cookie: cookie },
     });
     const crumb = (await crumbRes.text()).trim();
@@ -120,7 +129,7 @@ async function yfetch(url: string, withCrumb = false): Promise<any> {
       headers.Cookie = s.cookie;
       full += (url.includes("?") ? "&" : "?") + "crumb=" + encodeURIComponent(s.crumb);
     }
-    const res = await fetch(full, { headers });
+    const res = await httpFetch(full, { headers });
     if (!res.ok) {
       if (res.status === 429) {
         consecutive429s++;
@@ -172,6 +181,8 @@ export async function quotes(symbols: string[]): Promise<Quote[]> {
     marketState: r.marketState ?? null,
     time: n(r.regularMarketTime),
     source: "yahoo",
+    // exchangeDataDelayedBy is in minutes; 0 means Yahoo says it is not delayed.
+    delayClass: n(r.exchangeDataDelayedBy) === 0 ? "realtime" : "delayed",
   }));
 }
 
@@ -211,6 +222,7 @@ export async function quoteFromChart(symbol: string): Promise<Quote> {
     marketState: null,
     time: n(meta.regularMarketTime),
     source: "yahoo-chart",
+    delayClass: "delayed", // chart metadata carries no delay declaration
   };
 }
 

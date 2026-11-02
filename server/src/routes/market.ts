@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { cached, cacheGet, cacheStore, staleGet } from "../cache.js";
-import { withFallback } from "../providers/registry.js";
+import { tracked, withFallback } from "../providers/registry.js";
 import * as yahoo from "../providers/yahoo.js";
 import * as stooq from "../providers/stooq.js";
 import * as nasdaq from "../providers/nasdaq.js";
@@ -13,6 +13,9 @@ import * as news from "../providers/news.js";
 import * as econcalendar from "../providers/econcalendar.js";
 import * as finra from "../providers/finra.js";
 import * as secedgar from "../providers/secedgar.js";
+import { toObservation } from "../marketdata/observation.js";
+import { evaluateFreshness, freshnessPolicyFromEnv } from "../marketdata/freshness.js";
+import { recordObservation } from "../marketdata/ledger.js";
 
 export const marketRouter = Router();
 
@@ -68,8 +71,9 @@ async function vixQuote(): Promise<yahoo.Quote> {
     currency: "USD",
     exchange: "CBOE",
     marketState: null,
-    time: null,
+    time: Math.floor(new Date(last.date + "T00:00:00Z").getTime() / 1000),
     source: "fred",
+    delayClass: "eod",
   };
 }
 
@@ -111,7 +115,7 @@ async function vixHistory(rangeKey: string): Promise<yahoo.Candle[]> {
  * per-IP rate limit (see index.ts).
  */
 const FALLBACK_PER_SYMBOL_CAP = 20;
-async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
+export async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
   const fresh = new Map<string, yahoo.Quote>();
   const missing: string[] = [];
   for (const sym of symbols) {
@@ -126,7 +130,7 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 
   const cryptoSymbols = remaining.filter((s) => binance.CRYPTO_SYMBOLS.has(s));
   if (cryptoSymbols.length > 0) {
-    const results = await Promise.allSettled(cryptoSymbols.map((s) => binance.quote(s)));
+    const results = await Promise.allSettled(cryptoSymbols.map((s) => tracked("binance", () => binance.quote(s))));
     results.forEach((r, i) => {
       if (r.status === "fulfilled") fetched.set(cryptoSymbols[i], r.value);
     });
@@ -135,14 +139,14 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 
   const vixSymbols = remaining.filter((s) => isVix(s));
   if (vixSymbols.length > 0) {
-    const results = await Promise.allSettled(vixSymbols.map(() => vixQuote()));
+    const results = await Promise.allSettled(vixSymbols.map(() => tracked("fred", () => vixQuote())));
     results.forEach((r, i) => {
       if (r.status === "fulfilled") fetched.set(vixSymbols[i], r.value);
     });
     remaining = remaining.filter((s) => !fetched.has(s));
   }
 
-  const nasdaqResults = await Promise.allSettled(remaining.map((s) => nasdaq.quote(s)));
+  const nasdaqResults = await Promise.allSettled(remaining.map((s) => tracked("nasdaq", () => nasdaq.quote(s))));
   nasdaqResults.forEach((r, i) => {
     if (r.status === "fulfilled") fetched.set(remaining[i], r.value);
   });
@@ -150,7 +154,7 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 
   if (remaining.length > 0) {
     try {
-      const rows = await yahoo.quotes(remaining);
+      const rows = await tracked("yahoo", () => yahoo.quotes(remaining));
       for (const q of rows) fetched.set(q.symbol, q);
       remaining = remaining.filter((s) => !fetched.has(s));
     } catch {
@@ -160,7 +164,7 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 
   if (remaining.length > 0) {
     const batch = remaining.slice(0, FALLBACK_PER_SYMBOL_CAP);
-    const results = await Promise.allSettled(batch.map((s) => yahoo.quoteFromChart(s)));
+    const results = await Promise.allSettled(batch.map((s) => tracked("yahoo-chart", () => yahoo.quoteFromChart(s))));
     results.forEach((r, i) => {
       if (r.status === "fulfilled") fetched.set(batch[i], r.value);
     });
@@ -169,7 +173,7 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
 
   if (remaining.length > 0) {
     const batch = remaining.slice(0, FALLBACK_PER_SYMBOL_CAP);
-    const results = await Promise.allSettled(batch.map((s) => stooq.quote(s)));
+    const results = await Promise.allSettled(batch.map((s) => tracked("stooq", () => stooq.quote(s))));
     results.forEach((r, i) => {
       if (r.status === "fulfilled") fetched.set(batch[i], r.value);
     });
@@ -199,13 +203,27 @@ async function getQuotes(symbols: string[]): Promise<yahoo.Quote[]> {
     }
   }
 
-  for (const [sym, q] of fetched) cacheStore(`quote:${sym}`, q, QUOTE_TTL);
+  // Stamp when WE got it: lets freshness checks bound how long a cached object
+  // has been held, independent of the provider's own (possibly missing) timestamp.
+  const fetchedAt = Date.now();
+  for (const [sym, q] of fetched) {
+    q.fetchedAt = fetchedAt;
+    cacheStore(`quote:${sym}`, q, QUOTE_TTL);
+  }
 
   const out: yahoo.Quote[] = [];
   for (const sym of symbols) {
-    const q = fresh.get(sym) ?? fetched.get(sym) ?? staleGet<yahoo.Quote>(`quote:${sym}`);
-    if (q) out.push(q);
+    const live = fresh.get(sym) ?? fetched.get(sym);
+    if (live) {
+      out.push(live);
+      continue;
+    }
+    // Every provider failed: serve the last-known value, but say so explicitly
+    // (on a copy, so the cached original is not mutated).
+    const stale = staleGet<yahoo.Quote>(`quote:${sym}`);
+    if (stale) out.push({ ...stale, servedStale: true });
   }
+  for (const q of out) recordObservation(toObservation(q));
   return out;
 }
 
@@ -219,7 +237,11 @@ marketRouter.get("/quotes", async (req, res) => {
   try {
     const data = await getQuotes(symbols);
     if (data.length === 0) throw new Error("no quotes from any provider");
-    res.json(data);
+    // Additive field: lets clients (and later the alert engine) see whether each
+    // quote would be accepted for alert generation, and why not.
+    const now = Date.now();
+    const policy = freshnessPolicyFromEnv();
+    res.json(data.map((q) => ({ ...q, freshness: evaluateFreshness(toObservation(q), now, policy) })));
   } catch (err) {
     fail(req, res, err);
   }
