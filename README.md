@@ -232,7 +232,7 @@ Please open an issue first for anything non‑trivial so we can align on approac
 
 - The day-trader monitor uses free public data that is delayed or indicative. It is a paper-trading research tool, not a trading system; strategy defaults are unoptimized. See [docs/SAFETY.md](docs/SAFETY.md).
 
-- `npm audit` still flags two dependency advisories this project doesn't force-fix: `fast-xml-parser`'s XMLBuilder injection (moderate) doesn't apply here — only `XMLParser` is used, never `XMLBuilder` — and `postcss`'s high-severity issue is bundled inside Next.js itself, only resolved by a Next 16 major upgrade. Both are tracked, neither is silently ignored.
+- Dependencies are kept at **0 known advisories** (`npm audit`, including dev tooling), enforced by CI. Two overrides in the root `package.json` keep patched transitive versions: `qs`, and `zod`/`postcss` (Next pins `postcss` to an exact vulnerable version; the override is covered by the build and browser acceptance tests). Regenerating `package-lock.json` for the current vitest 4 graph needs npm ≥ 11 (`npx npm@11 install`); installing from the lockfile (`npm ci`) works with npm 10.
 - If you deploy behind a reverse proxy or load balancer, set `API_HOST`/`WEB_ORIGIN` to match, and terminate TLS in front of it — this project doesn't handle HTTPS itself.
 
 <br/>

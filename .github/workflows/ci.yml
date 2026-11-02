@@ -30,13 +30,11 @@ jobs:
       - run: npm run build -w server
       - run: npm run build -w web
 
-  # Reported on every run but not blocking: the repo currently carries known
-  # advisories that need a deliberate dependency upgrade. Flip continue-on-error
-  # to false once `npm audit --omit=dev --audit-level=high` is clean.
+  # Dependencies are at zero known advisories (prod AND dev tooling). Any new advisory at or above
+  # "high" fails this job, so it cannot be merged unnoticed. Fix with `npm audit fix` or an upgrade.
   audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,4 +42,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --audit-level=high
