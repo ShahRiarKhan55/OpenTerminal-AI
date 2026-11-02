@@ -14,3 +14,12 @@ export function normalizeSymbol(raw: string): string | null {
 export function symbolsParam(symbols: string[]): string {
   return symbols.map(encodeURIComponent).join(",");
 }
+
+// The monitoring engine (alerts, paper trading) covers US stocks and ETFs only. This mirrors the
+// server's validation exactly (server/src/engine/store.ts), so the UI can explain a rejection up front.
+const MONITOR_RE = /^[A-Z][A-Z0-9]{0,4}([.-][A-Z0-9]{1,2})?$/;
+
+export function normalizeMonitorSymbol(raw: string): string | null {
+  const s = raw.trim().toUpperCase();
+  return MONITOR_RE.test(s) ? s : null;
+}

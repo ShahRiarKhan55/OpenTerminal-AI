@@ -18,11 +18,15 @@ const ITEMS: Array<{ type: WidgetType; label: string; key: string }> = [
   { type: "insider", label: "INSIDER", key: "" },
   { type: "tv", label: "LIVE TV", key: "" },
   { type: "recap", label: "MARKET RECAP", key: "" },
+  { type: "alerts", label: "ALERTS", key: "" },
+  { type: "paper", label: "PAPER TRADING", key: "" },
+  { type: "monitor", label: "MONITOR", key: "" },
 ];
 
 export default function Sidebar() {
   const addWidget = useTerminal((s) => s.addWidget);
   const resetWorkspace = useTerminal((s) => s.resetWorkspace);
+  const applyDayTraderLayout = useTerminal((s) => s.applyDayTraderLayout);
 
   return (
     <nav className="w-32 bg-[var(--panel)] border-r border-[var(--border)] flex flex-col shrink-0">
@@ -40,6 +44,13 @@ export default function Sidebar() {
         </button>
       ))}
       <div className="mt-auto border-t border-[var(--border)]">
+        <button
+          onClick={applyDayTraderLayout}
+          className="w-full text-left px-2 py-1.5 text-[11px] amber hover:bg-[#1a1a1a]"
+          title="Chart, watchlist, alerts, paper trading and monitor on one screen"
+        >
+          DAY TRADER LAYOUT
+        </button>
         <button
           onClick={resetWorkspace}
           className="w-full text-left px-2 py-1.5 text-[11px] dim hover:text-[var(--down)]"

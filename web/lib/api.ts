@@ -20,6 +20,20 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+/** POST/PUT/PATCH with a JSON body; returns parsed JSON (or null for 204). */
+export async function apiSend<T = unknown>(method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return (res.status === 204 ? null : await res.json()) as T;
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const res = await fetch(path, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);

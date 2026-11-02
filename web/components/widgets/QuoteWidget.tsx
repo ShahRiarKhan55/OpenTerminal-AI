@@ -7,6 +7,22 @@ import Flash from "../Flash";
 
 type ShortVolume = { date: string; shortVolume: number; shortExemptVolume: number; totalVolume: number; shortVolumePercent: number };
 
+/** Honest data-quality line: how timely the price is, and whether it would be accepted for alerts. */
+function DataAge({ quote }: { quote: Quote }) {
+  const f = quote.freshness;
+  const delay = quote.delayClass === "realtime" ? "provider-reported real-time" : quote.delayClass === "eod" ? "end-of-day" : "delayed / indicative";
+  const age = f?.ageSec != null ? ` · ${Math.max(0, Math.round(f.ageSec))}s old` : "";
+  const stale = quote.servedStale ? " · LAST KNOWN (provider unavailable)" : "";
+  return (
+    <div className="text-[10px] mb-1" title="Prices come from free public endpoints and are never exchange-grade.">
+      <span className={quote.servedStale ? "down" : "dim"}>{delay}{age}{stale}</span>
+      {f && (
+        <span className={f.ok ? "up" : "dim"}> · {f.ok ? "alert-grade" : `not alert-grade (${f.reason.replace(/_/g, " ")})`}</span>
+      )}
+    </div>
+  );
+}
+
 export default function QuoteWidget({ widget }: { widget: WidgetInstance }) {
   const symbol = useWidgetSymbol(widget);
   const { data, error } = useQuery({
@@ -56,6 +72,7 @@ export default function QuoteWidget({ widget }: { widget: WidgetInstance }) {
           {data.exchange ?? ""} · {data.currency ?? ""} · {data.source}
         </span>
       </div>
+      <DataAge quote={data} />
       <div className="dim text-[11px] mb-2 truncate">{data.name}</div>
       <div className="grid grid-cols-2 gap-x-4">
         {rows.map(([label, value]) => (

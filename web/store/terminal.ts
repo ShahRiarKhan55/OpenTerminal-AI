@@ -2,7 +2,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { normalizeSymbol } from "../lib/symbol";
+import { apiSend } from "../lib/api";
+import { normalizeMonitorSymbol, normalizeSymbol } from "../lib/symbol";
 
 export type WidgetType =
   | "quote"
@@ -19,7 +20,10 @@ export type WidgetType =
   | "calendar"
   | "insider"
   | "tv"
-  | "recap";
+  | "recap"
+  | "alerts"
+  | "paper"
+  | "monitor";
 
 export type WidgetInstance = {
   id: string;
@@ -35,6 +39,9 @@ type TerminalState = {
   widgets: WidgetInstance[];
   layout: LayoutItem[];
   watchlist: string[];
+  /** Id of the server-side list the worker monitors; null until the first sync. */
+  watchlistId: number | null;
+  watchlistError: string | null;
   commandOpen: boolean;
   setActiveSymbol: (s: string) => void;
   setCommandOpen: (open: boolean) => void;
@@ -45,7 +52,11 @@ type TerminalState = {
   setLayout: (layout: LayoutItem[]) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
+  setWatchlist: (list: string[]) => void;
+  setWatchlistId: (id: number | null) => void;
+  clearWatchlistError: () => void;
   resetWorkspace: () => void;
+  applyDayTraderLayout: () => void;
 };
 
 const DEFAULT_WIDGETS: WidgetInstance[] = [
@@ -80,7 +91,28 @@ const SIZE_BY_TYPE: Record<WidgetType, { w: number; h: number }> = {
   insider: { w: 7, h: 9 },
   tv: { w: 6, h: 11 },
   recap: { w: 5, h: 12 },
+  alerts: { w: 6, h: 11 },
+  paper: { w: 7, h: 11 },
+  monitor: { w: 5, h: 12 },
 };
+
+const DAY_TRADER_WIDGETS: WidgetInstance[] = [
+  { id: "dt-chart", type: "chart", linked: true },
+  { id: "dt-watchlist", type: "watchlist", linked: false },
+  { id: "dt-alerts", type: "alerts", linked: false },
+  { id: "dt-paper", type: "paper", linked: false },
+  { id: "dt-monitor", type: "monitor", linked: false },
+  { id: "dt-quote", type: "quote", linked: true },
+];
+
+const DAY_TRADER_LAYOUT: LayoutItem[] = [
+  { i: "dt-chart", x: 0, y: 0, w: 6, h: 11 },
+  { i: "dt-watchlist", x: 6, y: 0, w: 3, h: 7 },
+  { i: "dt-quote", x: 9, y: 0, w: 3, h: 7 },
+  { i: "dt-alerts", x: 6, y: 7, w: 6, h: 10 },
+  { i: "dt-paper", x: 0, y: 11, w: 6, h: 10 },
+  { i: "dt-monitor", x: 6, y: 17, w: 6, h: 10 },
+];
 
 export const useTerminal = create<TerminalState>()(
   persist(
@@ -89,6 +121,8 @@ export const useTerminal = create<TerminalState>()(
       widgets: DEFAULT_WIDGETS,
       layout: DEFAULT_LAYOUT,
       watchlist: ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "SPY"],
+      watchlistId: null,
+      watchlistError: null,
       commandOpen: false,
       setActiveSymbol: (s) => {
         const sym = normalizeSymbol(s);
@@ -123,16 +157,46 @@ export const useTerminal = create<TerminalState>()(
         })),
       setLayout: (layout) => set({ layout }),
       addToWatchlist: (s) => {
-        const sym = normalizeSymbol(s);
-        if (!sym) return;
-        set((st) => ({
-          watchlist: st.watchlist.includes(sym) ? st.watchlist : [...st.watchlist, sym],
-        }));
+        // The watchlist is what the monitoring worker watches, so it only accepts US stocks/ETFs.
+        const sym = normalizeMonitorSymbol(s);
+        if (!sym) {
+          set({ watchlistError: `"${s.trim().toUpperCase()}" is not a US stock/ETF ticker. The watchlist is monitored for alerts and paper trading, which cover US stocks and ETFs only.` });
+          return;
+        }
+        const { watchlistId, watchlist } = useTerminal.getState();
+        if (watchlist.includes(sym)) return;
+        set({ watchlist: [...watchlist, sym], watchlistError: null }); // optimistic
+        if (watchlistId !== null) {
+          apiSend("POST", `/api/watchlists/${watchlistId}/symbols`, { symbol: sym }).catch((e: Error) =>
+            set((st) => ({ watchlist: st.watchlist.filter((x) => x !== sym), watchlistError: `Could not add ${sym}: ${e.message}` }))
+          );
+        }
       },
-      removeFromWatchlist: (s) => set((st) => ({ watchlist: st.watchlist.filter((x) => x !== s) })),
+      removeFromWatchlist: (s) => {
+        const { watchlistId } = useTerminal.getState();
+        set((st) => ({ watchlist: st.watchlist.filter((x) => x !== s) }));
+        if (watchlistId !== null) {
+          apiSend("DELETE", `/api/watchlists/${watchlistId}/symbols/${encodeURIComponent(s)}`).catch((e: Error) =>
+            set((st) => ({ watchlist: st.watchlist.includes(s) ? st.watchlist : [...st.watchlist, s], watchlistError: `Could not remove ${s}: ${e.message}` }))
+          );
+        }
+      },
+      setWatchlist: (list) => set({ watchlist: list, watchlistError: null }),
+      setWatchlistId: (id) => set({ watchlistId: id }),
+      clearWatchlistError: () => set({ watchlistError: null }),
       resetWorkspace: () => set({ widgets: DEFAULT_WIDGETS, layout: DEFAULT_LAYOUT }),
+      applyDayTraderLayout: () => set({ widgets: DAY_TRADER_WIDGETS, layout: DAY_TRADER_LAYOUT }),
     }),
-    { name: "openterminal-workspace" }
+    {
+      name: "openterminal-workspace",
+      // Transient UI state is never persisted.
+      partialize: (st) => {
+        const { watchlistError, commandOpen, ...rest } = st;
+        void watchlistError;
+        void commandOpen;
+        return rest;
+      },
+    }
   )
 );
 

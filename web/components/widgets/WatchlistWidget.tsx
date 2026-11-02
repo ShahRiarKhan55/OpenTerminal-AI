@@ -12,6 +12,8 @@ export default function WatchlistWidget() {
   const addToWatchlist = useTerminal((s) => s.addToWatchlist);
   const removeFromWatchlist = useTerminal((s) => s.removeFromWatchlist);
   const setActiveSymbol = useTerminal((s) => s.setActiveSymbol);
+  const watchlistError = useTerminal((s) => s.watchlistError);
+  const clearWatchlistError = useTerminal((s) => s.clearWatchlistError);
   const [input, setInput] = useState("");
   const [invalid, setInvalid] = useState(false);
 
@@ -51,6 +53,13 @@ export default function WatchlistWidget() {
         />
         <button className="term-btn" type="submit">+</button>
       </form>
+      {watchlistError && (
+        <div className="px-2 pb-1 down text-[10px] flex gap-2" role="alert">
+          <span>{watchlistError}</span>
+          <button className="dim" onClick={clearWatchlistError}>✕</button>
+        </div>
+      )}
+      <div className="px-2 pb-1 dim text-[9px]">Monitored for alerts &amp; paper trading · US stocks/ETFs</div>
       <table className="data-table">
         <thead>
           <tr><th>Sym</th><th>Last</th><th>Chg%</th><th>Vol</th><th></th></tr>
