@@ -8,6 +8,7 @@ import type { Quote } from "../providers/yahoo.js";
 
 vi.mock("../marketdata/quotes.js", async (orig) => ({ ...(await orig<object>()), getQuotes: vi.fn() }));
 import { getQuotes } from "../marketdata/quotes.js";
+import { QUOTE_DEADLINE_MS } from "./investments.js";
 const mockQuotes = vi.mocked(getQuotes);
 
 const KEY = "investments-test-key-0123456789";
@@ -220,6 +221,17 @@ describe("GET /api/investments/summary", () => {
       expect(h).toMatchObject({ priceStatus: "missing", price: null, marketValue: null });
       expect(h.quoteIssue).toMatch(/USD, not JPY/);
     });
+    it("a provider that HANGS cannot hold the portfolio hostage: answers within the deadline using the manual price, and says so", async () => {
+      await btc();
+      mockQuotes.mockImplementation(() => new Promise(() => undefined)); // never settles
+      const t0 = Date.now();
+      const r = (await call("GET", "/api/investments/summary")).json;
+      const took = Date.now() - t0;
+      expect(took).toBeGreaterThanOrEqual(QUOTE_DEADLINE_MS - 100);
+      expect(took).toBeLessThan(QUOTE_DEADLINE_MS + 3_000);
+      expect(r.quoteError).toMatch(/unavailable/);
+      expect(r.holdings[0].priceStatus).toBe("missing"); // no manual fallback in this fixture: never a guessed price
+    }, 15_000);
     it("provider failure: says so, and a manual price entered by the user still works", async () => {
       await btc();
       mockQuotes.mockRejectedValue(new Error("all providers down"));

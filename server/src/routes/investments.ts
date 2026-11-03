@@ -72,6 +72,17 @@ investmentsRouter.delete("/holdings/:id", (req, res) => {
   res.status(204).end();
 });
 
+/** A slow public quote provider must never hold the whole portfolio hostage: past this, fall back to manual prices (labelled). */
+export const QUOTE_DEADLINE_MS = 4_000;
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`quote lookup exceeded ${ms}ms`)), ms); });
+  // The underlying request keeps running (and warms the quote cache for the next refresh); its late result is ignored.
+  p.catch(() => undefined);
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
 /** Holdings valued now: live quotes where configured, manual prices otherwise, every price labelled fresh/stale/missing. */
 investmentsRouter.get("/investments/summary", async (_req, res) => {
   const now = Date.now();
@@ -81,7 +92,7 @@ investmentsRouter.get("/investments/summary", async (_req, res) => {
   let quoteError: string | null = null;
   if (symbols.length > 0) {
     try {
-      for (const q of await getQuotes(symbols)) {
+      for (const q of await withDeadline(getQuotes(symbols), QUOTE_DEADLINE_MS)) {
         readings.set(q.symbol.toUpperCase(), {
           symbol: q.symbol,
           price: q.price,
