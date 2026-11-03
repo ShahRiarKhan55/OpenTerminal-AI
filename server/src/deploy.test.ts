@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
  * these tests stop them silently regressing.
  */
 const REPO = join(import.meta.dirname, "..", "..");
-const read = (p: string) => readFileSync(join(REPO, p), "utf8");
+// Windows checkouts (core.autocrlf) turn LF into CRLF: normalise so line-based parsing never sees a stray "\r".
+const read = (p: string) => readFileSync(join(REPO, p), "utf8").replace(/\r\n/g, "\n");
 const compose = parse(read("docker-compose.yml"), { merge: true }) as {
   services: Record<string, Record<string, any>>;
   volumes: Record<string, unknown>;
@@ -114,7 +115,7 @@ describe("Dockerfiles", () => {
     expect(read("server/Dockerfile")).toMatch(/require\('better-sqlite3'\)/);
   });
   it(".dockerignore keeps secrets, data and VCS history out of the build context", () => {
-    const ig = read(".dockerignore").split("\n");
+    const ig = read(".dockerignore").split("\n").map((l) => l.trim());
     for (const p of [".git", ".env", "data", "**/node_modules"]) expect(ig).toContain(p);
   });
 });

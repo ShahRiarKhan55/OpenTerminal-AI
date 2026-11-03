@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { expectOwnerOnly, removeDir } from "./test-support.js";
 
 const KEY = "security-test-key-0123456789abcdef";
 const CANARIES = { ANTHROPIC_API_KEY: "sk-ant-CANARY-aaaaaaaaaaaaaaaa", TELEGRAM_BOT_TOKEN: "987654321:CANARYtokenBBBBBBBBBBBBBBBBBBBBBBBBBBB", TELEGRAM_CHAT_ID: "424242" };
@@ -28,7 +29,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise((r) => server.close(r));
   db.close();
-  rmSync(join(tmpDir, ".."), { recursive: true, force: true });
+  removeDir(join(tmpDir, ".."));
   for (const k of ["DATA_DIR", "API_KEY", "WEB_ORIGIN", ...Object.keys(CANARIES)]) delete process.env[k];
 });
 
@@ -78,8 +79,8 @@ describe("response hardening", () => {
   });
 
   it("keeps the private data directory owner-only", () => {
-    expect(statSync(tmpDir).mode & 0o777).toBe(0o700);
-    expect(statSync(join(tmpDir, "backups")).mode & 0o777).toBe(0o700);
+    expectOwnerOnly(tmpDir);
+    expectOwnerOnly(join(tmpDir, "backups"));
   });
 });
 

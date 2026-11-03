@@ -9,6 +9,10 @@
  *    excluded from base-currency totals unless an explicit, dated FX rate is supplied.
  */
 
+/** A slow public quote provider must never hold the whole portfolio hostage: past this, fall back to manual prices (labelled).
+ * Lives here (not in the route) so tests can import it without importing db.ts, which opens the database at import time. */
+export const QUOTE_DEADLINE_MS = 4_000;
+
 export const BASE_CURRENCY = "JPY";
 /** Currencies the API accepts for holdings. Widening this (plus supplying FX rates) is how USD etc. arrive later. */
 export const SUPPORTED_CURRENCIES = ["JPY"] as const;

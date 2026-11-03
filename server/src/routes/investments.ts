@@ -2,7 +2,7 @@ import { Router } from "express";
 import { audit } from "../audit.js";
 import { db } from "../db.js";
 import { getQuotes } from "../marketdata/quotes.js";
-import { DEFAULT_POLICY, jstDateKey, summarize, valueHolding, BASE_CURRENCY, SUPPORTED_CURRENCIES, ASSET_TYPES, type QuoteReading } from "../investments/calc.js";
+import { DEFAULT_POLICY, jstDateKey, summarize, valueHolding, BASE_CURRENCY, QUOTE_DEADLINE_MS, SUPPORTED_CURRENCIES, ASSET_TYPES, type QuoteReading } from "../investments/calc.js";
 import { checkAsOfNotFuture, HoldingInputSchema, PriceUpdateSchema } from "../investments/schema.js";
 import { createHolding, deleteHolding, getHolding, HoldingLimitError, listHoldings, setManualPrice, updateHolding } from "../investments/store.js";
 import { parseBody, parseId } from "./util.js";
@@ -71,9 +71,6 @@ investmentsRouter.delete("/holdings/:id", (req, res) => {
   audit(db, { kind: "api", decision: "holding_deleted", detail: { id } }, Date.now());
   res.status(204).end();
 });
-
-/** A slow public quote provider must never hold the whole portfolio hostage: past this, fall back to manual prices (labelled). */
-export const QUOTE_DEADLINE_MS = 4_000;
 
 function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;

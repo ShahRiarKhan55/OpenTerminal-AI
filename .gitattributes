@@ -1,0 +1,8 @@
+# Keep LF for files that Linux containers and bash parse line by line. Without this, a Windows checkout with
+# core.autocrlf=true produces CRLF, which breaks shell scripts ("bad interpreter: ^M") and trailing-"\r" patterns.
+*.sh            text eol=lf
+Dockerfile*     text eol=lf
+.dockerignore   text eol=lf
+docker-compose*.yml text eol=lf
+*.env.example   text eol=lf
+.env.example    text eol=lf

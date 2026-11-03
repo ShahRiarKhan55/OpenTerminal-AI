@@ -8,7 +8,7 @@ import type { Quote } from "../providers/yahoo.js";
 
 vi.mock("../marketdata/quotes.js", async (orig) => ({ ...(await orig<object>()), getQuotes: vi.fn() }));
 import { getQuotes } from "../marketdata/quotes.js";
-import { QUOTE_DEADLINE_MS } from "./investments.js";
+import { QUOTE_DEADLINE_MS } from "../investments/calc.js";
 const mockQuotes = vi.mocked(getQuotes);
 
 const KEY = "investments-test-key-0123456789";

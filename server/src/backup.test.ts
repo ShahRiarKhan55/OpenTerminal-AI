@@ -1,23 +1,41 @@
 import Database from "better-sqlite3";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createBackup, listBackups, pruneBackups, restoreBackup } from "./backup.js";
 import { LATEST_VERSION, MIGRATIONS, runMigrations } from "./migrations.js";
+import { expectOwnerOnly, removeDir } from "./test-support.js";
 import { workerHealth } from "./worker/healthcheck.js";
 
 let dir: string;
 let dbFile: string;
+// Windows cannot delete a file that is still open. If a test fails half-way, its database handle (or the spawned writer) would
+// otherwise stay open and make the directory cleanup fail with EPERM, so everything opened is tracked and released first.
+const handles: Database.Database[] = [];
+const children: ChildProcess[] = [];
+const openDb = (file: string, opts?: Database.Options) => { const d = new Database(file, opts); handles.push(d); return d; };
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "ot-backup-"));
   dbFile = join(dir, "terminal.db");
 });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+afterEach(async () => {
+  for (const c of children.splice(0)) {
+    if (c.exitCode === null && c.signalCode === null) {
+      const exited = new Promise((r) => c.once("exit", r));
+      c.kill();
+      await exited;
+    }
+  }
+  for (const h of handles.splice(0)) {
+    try { if (h.open) h.close(); } catch { /* already closed */ }
+  }
+  removeDir(dir);
+});
 
 function makeLive(rows = 5, wal = true): Database.Database {
-  const db = new Database(dbFile);
+  const db = openDb(dbFile);
   if (wal) db.pragma("journal_mode = WAL");
   runMigrations(db);
   db.prepare("INSERT INTO portfolios (name) VALUES ('Main')").run();
@@ -26,7 +44,7 @@ function makeLive(rows = 5, wal = true): Database.Database {
   return db;
 }
 const count = (file: string, sql = "SELECT COUNT(*) c FROM audit_log") => {
-  const d = new Database(file, { readonly: true });
+  const d = openDb(file, { readonly: true });
   try { return (d.prepare(sql).get() as { c: number }).c; } finally { d.close(); }
 };
 
@@ -40,7 +58,7 @@ describe("createBackup", () => {
     expect(r.userVersion).toBe(LATEST_VERSION);
     expect(count(r.path)).toBe(25);
     expect(count(r.path, "SELECT COUNT(*) c FROM portfolios")).toBe(1);
-    expect(statSync(join(dir, "backups")).mode & 0o777).toBe(0o700);
+    expectOwnerOnly(join(dir, "backups")); // exact 0700 on POSIX; no broad ACL entry on Windows
     // the live database is untouched and still writable
     live.prepare("INSERT INTO audit_log (ts, kind, decision) VALUES (1, 'system', 'after')").run();
     expect(count(dbFile)).toBe(26);
@@ -83,6 +101,7 @@ describe("createBackup", () => {
     const child = spawn(process.execPath, ["--import", "tsx", join(import.meta.dirname, "test-child-writer.ts"), "4000", "w"], {
       env: { ...process.env, DATA_DIR: dir }, stdio: ["ignore", "pipe", "pipe"],
     });
+    children.push(child);
     const done = new Promise<number | null>((r) => child.on("close", r));
     // Wait until the writer has really started writing (a fixed sleep is flaky when the machine is busy).
     const started = Date.now();
@@ -108,7 +127,7 @@ describe("createBackup", () => {
       expect(m1, "multi-statement transactions must be all-or-nothing in a snapshot").toBe(m2);
       expect(total).toBeGreaterThanOrEqual(last);
       last = total;
-      const d = new Database(p, { readonly: true });
+      const d = openDb(p, { readonly: true });
       expect(d.pragma("integrity_check", { simple: true })).toBe("ok");
       d.close();
     }
@@ -132,7 +151,7 @@ describe("restoreBackup", () => {
 
   it("replaces the live database, keeps the old one aside, and drops stale WAL files", () => {
     const b = backupOf(3);
-    const live = new Database(dbFile);
+    const live = openDb(dbFile);
     live.pragma("journal_mode = WAL");
     for (let i = 0; i < 10; i++) live.prepare("INSERT INTO audit_log (ts, kind, decision) VALUES (1, 'system', 'extra')").run();
     live.close();
@@ -156,8 +175,8 @@ describe("restoreBackup", () => {
   it.each([
     ["a missing file", (d: string) => join(d, "nope.db"), /not found/],
     ["a file that is not a database", (d: string) => { const f = join(d, "junk.db"); writeFileSync(f, "this is not sqlite at all, just text".repeat(20)); return f; }, /not a readable SQLite|corrupt|file is not a database/i],
-    ["an unrelated SQLite database", (d: string) => { const f = join(d, "other.db"); const o = new Database(f); o.exec("CREATE TABLE x (a)"); o.close(); return f; }, /not an OpenTerminal backup/],
-    ["a backup from a NEWER schema", (d: string) => { const f = join(d, "newer.db"); const o = new Database(f); runMigrations(o); o.pragma(`user_version = ${LATEST_VERSION + 5}`); o.close(); return f; }, /newer version/],
+    ["an unrelated SQLite database", (d: string) => { const f = join(d, "other.db"); const o = openDb(f); o.exec("CREATE TABLE x (a)"); o.close(); return f; }, /not an OpenTerminal backup/],
+    ["a backup from a NEWER schema", (d: string) => { const f = join(d, "newer.db"); const o = openDb(f); runMigrations(o); o.pragma(`user_version = ${LATEST_VERSION + 5}`); o.close(); return f; }, /newer version/],
   ])("rejects %s and changes nothing", (_n, make, msg) => {
     makeLive(7).close();
     const bad = make(dir);
@@ -168,12 +187,12 @@ describe("restoreBackup", () => {
 
   it("an OLDER backup restores and is then upgraded by the normal migrations", () => {
     const old = join(dir, "v2.db");
-    const o = new Database(old);
+    const o = openDb(old);
     runMigrations(o, { migrations: MIGRATIONS.slice(0, 2) });
     o.prepare("INSERT INTO portfolios (name) VALUES ('Main')").run();
     o.close();
     restoreBackup({ dataDir: dir, backupFile: old, confirmedStopped: true });
-    const d = new Database(dbFile);
+    const d = openDb(dbFile);
     expect(d.pragma("user_version", { simple: true })).toBe(2);
     runMigrations(d);
     expect(d.pragma("user_version", { simple: true })).toBe(LATEST_VERSION);
@@ -209,7 +228,7 @@ describe("command-line scripts", () => {
 
 describe("workerHealth", () => {
   const setHeartbeat = (value: unknown) => {
-    const d = new Database(dbFile);
+    const d = openDb(dbFile);
     runMigrations(d);
     d.prepare("INSERT OR REPLACE INTO worker_state (key, value, updated_at) VALUES ('heartbeat', ?, 0)").run(typeof value === "string" ? value : JSON.stringify(value));
     d.close();
@@ -217,7 +236,7 @@ describe("workerHealth", () => {
   const now = 1_800_000_000_000;
   it("is unhealthy with no database, no heartbeat, or a malformed one", () => {
     expect(workerHealth(dbFile, now, 900).ok).toBe(false);
-    const d = new Database(dbFile); runMigrations(d); d.close();
+    const d = openDb(dbFile); runMigrations(d); d.close();
     expect(workerHealth(dbFile, now, 900)).toMatchObject({ ok: false, reason: "no heartbeat yet" });
     setHeartbeat({ tickAt: "yesterday" });
     expect(workerHealth(dbFile, now, 900).reason).toBe("malformed heartbeat");
