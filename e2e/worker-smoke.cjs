@@ -30,7 +30,8 @@ const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t
   const db = new Database(join(dir, "terminal.db"), { readonly: true });
   const hb = beat ? JSON.parse(db.prepare("SELECT value FROM worker_state WHERE key='heartbeat'").get().value) : {};
   check("heartbeat says paper mode", hb.tradingMode === "paper");
-  check("database is at the current schema and intact", db.pragma("user_version", { simple: true }) === 4 && db.pragma("integrity_check", { simple: true }) === "ok");
+  const { LATEST_VERSION } = await import(require("url").pathToFileURL(join(__dirname, "..", "server", "dist", "migrations.js")).href);
+  check("database is at the current schema and intact", db.pragma("user_version", { simple: true }) === LATEST_VERSION && db.pragma("integrity_check", { simple: true }) === "ok", `v${LATEST_VERSION}`);
   db.close();
   const t0 = Date.now(); child.kill("SIGTERM");
   const code = await new Promise((r) => child.on("close", r));

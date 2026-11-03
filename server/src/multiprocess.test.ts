@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { LATEST_VERSION } from "./migrations.js";
 
 /**
  * The API and the monitor are separate OS processes sharing one SQLite file. This runs the real thing:
@@ -56,7 +57,7 @@ describe("two processes sharing one database", () => {
     expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
     expect(db.pragma("busy_timeout", { simple: true })).toBe(5000);
     expect(db.pragma("foreign_keys", { simple: true })).toBe(1);
-    expect(db.pragma("user_version", { simple: true })).toBe(4);
+    expect(db.pragma("user_version", { simple: true })).toBe(LATEST_VERSION);
     // seeds were applied exactly once despite the race
     expect((db.prepare("SELECT COUNT(*) c FROM watchlists WHERE name = 'Default'").get() as { c: number }).c).toBe(1);
     expect((db.prepare("SELECT COUNT(*) c FROM paper_account").get() as { c: number }).c).toBe(1);

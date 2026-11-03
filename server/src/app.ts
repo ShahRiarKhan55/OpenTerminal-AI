@@ -9,6 +9,7 @@ import { redact } from "./log.js";
 import { rateLimit } from "./rateLimit.js";
 import { summarize } from "./marketdata/ledger.js";
 import { tradingRouter, TRADING_PREFIXES } from "./routes/trading.js";
+import { investmentsRouter, INVESTMENT_PREFIXES } from "./routes/investments.js";
 import { freshnessPolicyFromEnv } from "./marketdata/freshness.js";
 
 export function createApp() {
@@ -55,8 +56,13 @@ app.use("/api", rateLimit({ windowMs: 60_000, max: 240 }), marketRouter);
 // prefixes, so the keyless market-data routes above are unaffected. See routes/trading.ts.
 const guardedTrading = Router();
 guardedTrading.use(requireApiKey, rateLimit({ windowMs: 60_000, max: 300 }), tradingRouter);
+// Personal investment holdings: same guard (API key + rate limit), separate router.
+const guardedInvestments = Router();
+guardedInvestments.use(requireApiKey, rateLimit({ windowMs: 60_000, max: 300 }), investmentsRouter);
 app.use("/api", (req, res, next) => {
-  if (TRADING_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + "/"))) return guardedTrading(req, res, next);
+  const under = (prefixes: string[]) => prefixes.some((p) => req.path === p || req.path.startsWith(p + "/"));
+  if (under(TRADING_PREFIXES)) return guardedTrading(req, res, next);
+  if (under(INVESTMENT_PREFIXES)) return guardedInvestments(req, res, next);
   next();
 });
 // Portfolio data and the paid AI endpoint require a shared secret; see auth.ts.

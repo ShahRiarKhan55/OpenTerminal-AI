@@ -26,7 +26,7 @@ describe("runMigrations", () => {
     expect(readdirSync(dir)).toEqual([]);
     expect(tables(db)).toEqual(
       [
-        "ai_calls", "alerts", "audit_log", "events", "paper_account", "paper_orders", "paper_positions",
+        "ai_calls", "alerts", "audit_log", "events", "holdings", "paper_account", "paper_orders", "paper_positions",
         "portfolios", "reports", "settings", "signals", "transactions", "watchlist_items", "watchlists", "worker_state",
       ].sort()
     );
@@ -107,7 +107,7 @@ describe("runMigrations", () => {
     runMigrations(a, { migrations: MIGRATIONS.slice(0, 2) });
     const r = runMigrations(a);
     expect(r.from).toBe(2);
-    expect(r.applied).toEqual(["3:events-alerts-signals-audit", "4:paper-trading-ai-reports"]);
+    expect(r.applied).toEqual(["3:events-alerts-signals-audit", "4:paper-trading-ai-reports", "5:investment-holdings"]);
     a.close();
   });
 

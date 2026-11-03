@@ -84,7 +84,16 @@ describe("createBackup", () => {
       env: { ...process.env, DATA_DIR: dir }, stdio: ["ignore", "pipe", "pipe"],
     });
     const done = new Promise<number | null>((r) => child.on("close", r));
-    await new Promise((r) => setTimeout(r, 400)); // let the writer get going
+    // Wait until the writer has really started writing (a fixed sleep is flaky when the machine is busy).
+    const started = Date.now();
+    while (Date.now() - started < 30_000) {
+      try {
+        if (count(dbFile) > 20) break;
+      } catch {
+        /* database still being created */
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const results: string[] = [];
     for (let i = 0; i < 6; i++) {
       results.push(createBackup({ dbFile, dir: join(dir, "backups"), now: Date.UTC(2026, 0, 1, 0, 0, i) }).path);

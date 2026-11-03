@@ -37,8 +37,9 @@ step() { # name, command...
   if [ $rc -ne 0 ]; then echo "   -> FAILED (exit $rc)"; tail -5 "$WORK/step.txt" | sed 's/^/      /'; FAIL=1; fi
 }
 # Order matters: the attack simulation needs the demo's open position, which the dashboard test then closes by hand.
-step "1/3 cross-origin attack simulation (real browser)" node "$ROOT/e2e/csrf.cjs"
-step "2/3 dashboard acceptance (real browser)"            node "$ROOT/e2e/dashboard.cjs" "$ROOT/e2e/out"
-step "3/3 worker process smoke test"                      node "$ROOT/e2e/worker-smoke.cjs"
+step "1/4 cross-origin attack simulation (real browser)" node "$ROOT/e2e/csrf.cjs"
+step "2/4 dashboard acceptance (real browser)"            node "$ROOT/e2e/dashboard.cjs" "$ROOT/e2e/out"
+step "3/4 personal investments page (real browser)"      node "$ROOT/e2e/investments.cjs" "$ROOT/e2e/out"
+step "4/4 worker process smoke test"                      node "$ROOT/e2e/worker-smoke.cjs"
 [ "$FAIL" = 0 ] && echo "== ACCEPTANCE: PASS" || echo "== ACCEPTANCE: FAIL"
 exit $FAIL

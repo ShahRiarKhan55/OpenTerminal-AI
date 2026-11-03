@@ -201,6 +201,30 @@ CREATE TABLE reports (
   UNIQUE (kind, period_key)
 );`,
   },
+  {
+    version: 5,
+    name: "investment-holdings",
+    sql: `
+CREATE TABLE holdings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('mutual_fund','commodity_fund','etf','stock','crypto','other')),
+  symbol TEXT,
+  currency TEXT NOT NULL CHECK (length(currency) = 3 AND currency = upper(currency)),
+  units REAL NOT NULL CHECK (units >= 0),
+  avg_price REAL NOT NULL CHECK (avg_price >= 0),
+  -- Quoted prices are per \`price_unit\` units: 1 for stocks/crypto, 10000 for Japanese mutual-fund NAVs (per 10,000 units).
+  price_unit INTEGER NOT NULL DEFAULT 1 CHECK (price_unit IN (1, 10000)),
+  price_source TEXT NOT NULL DEFAULT 'manual' CHECK (price_source IN ('manual','quote')),
+  manual_price REAL CHECK (manual_price IS NULL OR manual_price >= 0),
+  manual_price_as_of TEXT,
+  manual_price_updated_at INTEGER,
+  notes TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX holdings_currency ON holdings(currency);`,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

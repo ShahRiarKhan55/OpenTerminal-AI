@@ -88,6 +88,8 @@ Headlines aggregated and de‑duplicated across multiple sources, filterable per
 
 <br/>
 
+**Personal portfolio:** track long-term JPY holdings (mutual funds with manual NAV, Bitcoin) on the `MY PORTFOLIO` page — see [docs/INVESTMENTS.md](docs/INVESTMENTS.md).
+
 ## 🗂️ Data sources
 
 No paid API, no keys, and no single point of failure — every endpoint has a fallback chain, and results are cached with a stale‑while‑revalidate strategy so a temporary outage never blanks out the UI.

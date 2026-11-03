@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Personal Investment Command Center (Phase 1)**: `MY PORTFOLIO` page with JPY dashboard (total value, cost, unrealized P/L, allocation),
+  manual holdings add/edit/delete, manual NAV updates (per-10,000-unit aware), BTC-JPY live quote with manual fallback, honest stale/missing price labels.
+  SQLite migration 5. No orders, no broker connection, no API keys. See `docs/INVESTMENTS.md`.
+
 ## 0.2.0: Day-trader monitor, paper trading, hardened deployment
 
 **Paper trading only. No real-money execution exists** (enforced by tests that scan the source tree).
